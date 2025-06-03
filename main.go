@@ -3,7 +3,6 @@ package main
 import (
 	"flag"
 	"fmt"
-	"log"
 	"os"
 	"path/filepath"
 
@@ -11,62 +10,66 @@ import (
 )
 
 func main() {
+	var err error
+	// 初始化日志记录器
+	logger, err = NewLogger()
+	if err != nil {
+		// 由于日志记录器初始化失败，只能使用标准日志
+		fmt.Printf("初始化日志记录器失败: %v\n", err)
+		os.Exit(1)
+	}
+	defer logger.Close()
+
 	// 解析命令行参数
-	configFile := flag.String("config", "config.yaml", "配置文件路径")
-	excelFile := flag.String("file", "", "Excel文件路径")
+	configPath := flag.String("config", "config.yaml", "配置文件路径")
+	excelPath := flag.String("excel", "requirements.xlsx", "Excel文件路径")
 	flag.Parse()
 
-	// 验证Excel文件参数
-	if *excelFile == "" {
-		fmt.Println("请使用 -file 参数指定Excel文件路径")
-	}
-
 	// 加载配置文件
-	config, err := loadConfig(*configFile)
+	config, err := loadConfig(*configPath)
 	if err != nil {
-		log.Fatalf("加载配置文件失败: %v", err)
+		logger.Fatal("加载配置文件失败: %v", err)
 	}
 
 	// 如果命令行指定了Excel文件，覆盖配置文件中的设置
-	if *excelFile != "" {
-		config.ExcelFile = *excelFile
+	if *excelPath != "" {
+		config.ExcelFile = *excelPath
 	}
 
 	// 验证配置
 	if err := validateConfig(config); err != nil {
-		log.Fatal(err)
+		logger.Fatal("%v", err)
 	}
 
 	// 创建Excel读取器
 	reader, err := NewExcelReader(config.ExcelFile)
 	if err != nil {
-		log.Fatalf("创建Excel读取器失败: %v", err)
+		logger.Fatal("创建Excel读取器失败: %v", err)
 	}
 	defer reader.Close()
 
 	// 读取需求数据
 	stories, err := reader.ReadStories()
 	if err != nil {
-		log.Fatalf("读取Excel数据失败: %v", err)
+		logger.Fatal("读取Excel数据失败: %v", err)
 	}
 
-	if len(stories) == 0 {
-		log.Fatal("Excel文件中没有找到需求数据")
-	}
+	logger.Info("从Excel中读取到 %d 个需求", len(stories))
 
 	// 创建导入器
 	importer, err := NewImporter(config)
 	if err != nil {
-		log.Fatalf("创建导入器失败: %v", err)
+		logger.Fatal("创建导入器失败: %v", err)
 	}
 
 	// 导入需求
-	fmt.Printf("开始导入 %d 个需求...\n", len(stories))
 	results := importer.ImportStories(stories)
 
-	// 生成并显示报告
+	// 生成并打印报告
 	report := importer.GenerateReport(results)
-	fmt.Println(report)
+	logger.Info("\n%s", report)
+
+	logger.Info("日志文件已保存至: %s", logger.GetLogFilePath())
 
 	// 如果有失败的导入，使用非零状态码退出
 	for _, result := range results {

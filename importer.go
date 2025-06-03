@@ -7,6 +7,9 @@ import (
 	"github.com/easysoft/go-zentao/v21/zentao"
 )
 
+// 全局日志记录器变量，在main.go中初始化
+var logger *Logger
+
 // ImportResult 表示导入结果
 type ImportResult struct {
 	Success     bool
@@ -48,12 +51,17 @@ func (i *Importer) ImportStory(story *ExcelStory) ImportResult {
 	// 转换为禅道需求格式
 	zentaoStory := story.ToZentaoStory()
 
+	logger.Info("正在导入需求: %s", story.Title)
+
 	// 创建需求
 	createdStory, rsp, err := i.client.Stories.Create(*zentaoStory)
 	if (err != nil) || (rsp != nil && rsp.StatusCode != 200) {
-		result.Error = fmt.Errorf("创建需求失败: %w", err)
+		errMsg := fmt.Sprintf("创建需求失败: %v", err)
+		logger.Error(errMsg)
+		result.Error = fmt.Errorf(errMsg)
 		result.Success = false
 	} else {
+		logger.Success("需求创建成功，ID: %d", createdStory.ID)
 		result.StoryID = createdStory.ID
 		result.Success = true
 	}
@@ -66,10 +74,20 @@ func (i *Importer) ImportStory(story *ExcelStory) ImportResult {
 func (i *Importer) ImportStories(stories []ExcelStory) []ImportResult {
 	results := make([]ImportResult, len(stories))
 
+	logger.Info("开始批量导入需求，共 %d 个需求", len(stories))
+
 	for idx, story := range stories {
-		// 导入需求
+		logger.Info("正在导入第 %d/%d 个需求", idx+1, len(stories))
 		results[idx] = i.ImportStory(&story)
 	}
+
+	successCount := 0
+	for _, result := range results {
+		if result.Success {
+			successCount++
+		}
+	}
+	logger.Info("需求导入完成，成功: %d，失败: %d", successCount, len(stories)-successCount)
 
 	return results
 }
