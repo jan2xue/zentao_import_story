@@ -11,16 +11,16 @@ import (
 
 // ExcelStory 表示从Excel读取的需求数据
 type ExcelStory struct {
-	Title       string  // 标题*
-	ProductID   int     // 产品ID*
-	Priority    int     // 优先级* (1-4)
-	Category    string  // 分类*
+	Title      string  // 标题*
+	ProductID  int     // 产品ID*
+	Priority   int     // 优先级* (1-4)
+	Category   string  // 分类*
 	Spec       string  // 需求描述
-	ParentID    int     // 父需求ID
-	Source      string  // 来源
-	SourceNote  string  // 来源备注
-	Estimate    float64 // 预计工时
-	Keywords    string  // 关键词
+	ParentID   int     // 父需求ID
+	Source     string  // 来源
+	SourceNote string  // 来源备注
+	Estimate   float64 // 预计工时
+	Keywords   string  // 关键词
 	Verify     string  // 验收标准
 }
 
@@ -151,7 +151,7 @@ func (s *ExcelStory) ToZentaoStory() *zentao.StoriesCreateMeta {
 	return &zentao.StoriesCreateMeta{
 		Product: s.ProductID,
 		StoriesMeta: zentao.StoriesMeta{
-			Title: s.Title, // 需求标题	必填
+			Title:  s.Title,  // 需求标题	必填
 			Spec:   s.Spec,   // 需求描述
 			Verify: s.Verify, // 验证方法
 		},
