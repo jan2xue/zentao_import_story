@@ -1,4 +1,4 @@
-module github.com/easysoft/go-zentao/import_story
+module github.com/jan2xue/zentao_import_story
 
 go 1.24.0
 

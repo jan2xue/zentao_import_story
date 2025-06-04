@@ -57,8 +57,8 @@ func (i *Importer) ImportStory(story *ExcelStory) ImportResult {
 	createdStory, rsp, err := i.client.Stories.Create(*zentaoStory)
 	if (err != nil) || (rsp != nil && rsp.StatusCode != 200) {
 		errMsg := fmt.Sprintf("创建需求失败: %v", err)
-		logger.Error(errMsg)
-		result.Error = fmt.Errorf(errMsg)
+		logger.Error("%s", errMsg)
+		result.Error = fmt.Errorf("%s", errMsg)
 		result.Success = false
 	} else {
 		logger.Success("需求创建成功，ID: %d", createdStory.ID)
@@ -115,7 +115,7 @@ func (i *Importer) GenerateReport(results []ImportResult) string {
 	totalCount = len(results)
 
 	// 添加统计信息
-	report += fmt.Sprintf("\n总计统计:\n")
+	report += "\n总计统计:\n"
 	report += fmt.Sprintf("- 总需求数: %d\n", totalCount)
 	report += fmt.Sprintf("- 成功导入: %d\n", successCount)
 	report += fmt.Sprintf("- 失败数量: %d\n", totalCount-successCount)
