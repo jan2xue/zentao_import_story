@@ -49,7 +49,7 @@ func main() {
 	defer reader.Close()
 
 	// 读取需求数据
-	stories, err := reader.ReadStories()
+	stories, err := reader.ReadStories(config.DefaultPriority)
 	if err != nil {
 		logger.Fatal("读取Excel数据失败: %v", err)
 	}
