@@ -44,7 +44,7 @@ func (r *ExcelReader) Close() error {
 }
 
 // ReadStories 读取所有需求数据
-func (r *ExcelReader) ReadStories() ([]ExcelStory, error) {
+func (r *ExcelReader) ReadStories(defaultPriority int) ([]ExcelStory, error) {
 	// 获取第一个工作表
 	sheets := r.file.GetSheetList()
 	if len(sheets) == 0 {
@@ -64,7 +64,7 @@ func (r *ExcelReader) ReadStories() ([]ExcelStory, error) {
 	// 跳过标题行，处理数据行
 	var stories []ExcelStory
 	for i, row := range rows[1:] {
-		story, err := r.parseRow(row)
+		story, err := r.parseRow(row, defaultPriority)
 		if err != nil {
 			return nil, fmt.Errorf("第%d行数据解析失败: %w", i+2, err)
 		}
@@ -75,7 +75,7 @@ func (r *ExcelReader) ReadStories() ([]ExcelStory, error) {
 }
 
 // parseRow 解析Excel行数据为需求结构
-func (r *ExcelReader) parseRow(row []string) (ExcelStory, error) {
+func (r *ExcelReader) parseRow(row []string, defaultPriority int) (ExcelStory, error) {
 	if len(row) < 4 { // 检查必填字段
 		return ExcelStory{}, fmt.Errorf("行数据不完整，缺少必填字段")
 	}
@@ -87,9 +87,13 @@ func (r *ExcelReader) parseRow(row []string) (ExcelStory, error) {
 	}
 
 	// 解析优先级
-	priority, err := strconv.Atoi(strings.TrimSpace(row[2]))
-	if err != nil || priority < 1 || priority > 4 {
-		return ExcelStory{}, fmt.Errorf("优先级必须是1-4之间的数字")
+	priority := defaultPriority
+	if len(row) > 2 && strings.TrimSpace(row[2]) != "" {
+		p, err := strconv.Atoi(strings.TrimSpace(row[2]))
+		if err != nil || p < 1 || p > 4 {
+			return ExcelStory{}, fmt.Errorf("优先级必须是1-4之间的数字")
+		}
+		priority = p
 	}
 
 	// 创建需求对象
