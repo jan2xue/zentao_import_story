@@ -1,0 +1,10 @@
+# 禅道系统配置
+zentaoUrl: "https://pms.m2motive.com/"     # 禅道服务器地址
+zentaoUsername: "yanchao.zhou"                 # 禅道用户名
+zentaoPassword: "JAN2lanxue@"              # 禅道密码
+
+# Excel文件配置
+excelFile: "requirements.xlsx"               # Excel文件路径（可选，可通过命令行 -excel 参数指定）
+
+# 默认值配置
+defaultPriority: 3                           # 默认优先级（1-4），如果Excel中未指定则使用此值

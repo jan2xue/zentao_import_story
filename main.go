@@ -23,6 +23,8 @@ func main() {
 	// 解析命令行参数
 	configPath := flag.String("config", "config.yaml", "配置文件路径")
 	excelPath := flag.String("excel", "requirements.xlsx", "Excel文件路径")
+	action := flag.String("action", "import", "操作类型: import(导入) 或 export(导出)")
+	productID := flag.Int("product", 0, "产品ID(导出时使用)")
 	flag.Parse()
 
 	// 加载配置文件
@@ -41,41 +43,95 @@ func main() {
 		logger.Fatal("%v", err)
 	}
 
-	// 创建Excel读取器
-	reader, err := NewExcelReader(config.ExcelFile)
-	if err != nil {
-		logger.Fatal("创建Excel读取器失败: %v", err)
-	}
-	defer reader.Close()
-
-	// 读取需求数据
-	stories, err := reader.ReadStories(config.DefaultPriority)
-	if err != nil {
-		logger.Fatal("读取Excel数据失败: %v", err)
-	}
-
-	logger.Info("从Excel中读取到 %d 个需求", len(stories))
-
-	// 创建导入器
-	importer, err := NewImporter(config)
-	if err != nil {
-		logger.Fatal("创建导入器失败: %v", err)
-	}
-
-	// 导入需求
-	results := importer.ImportStories(stories)
-
-	// 生成并打印报告
-	report := importer.GenerateReport(results)
-	logger.Info("\n%s", report)
-
-	logger.Info("日志文件已保存至: %s", logger.GetLogFilePath())
-
-	// 如果有失败的导入，使用非零状态码退出
-	for _, result := range results {
-		if !result.Success {
-			os.Exit(1)
+	// 根据操作类型执行相应功能
+	switch *action {
+	case "import":
+		logger.Info("执行导入操作")
+		// 创建Excel读取器
+		reader, err := NewExcelReader(config.ExcelFile)
+		if err != nil {
+			logger.Fatal("创建Excel读取器失败: %v", err)
 		}
+		defer reader.Close()
+
+		// 读取需求数据
+		stories, err := reader.ReadStories(config.DefaultPriority)
+		if err != nil {
+			logger.Fatal("读取Excel数据失败: %v", err)
+		}
+
+		logger.Info("从Excel中读取到 %d 个需求", len(stories))
+
+		// 创建导入器
+		importer, err := NewImporter(config)
+		if err != nil {
+			logger.Fatal("创建导入器失败: %v", err)
+		}
+
+		// 导入需求
+		results := importer.ImportStories(stories)
+
+		// 生成并打印报告
+		report := importer.GenerateReport(results)
+		logger.Info("\n%s", report)
+
+		logger.Info("日志文件已保存至: %s", logger.GetLogFilePath())
+
+		// 如果有失败的导入，使用非零状态码退出
+		for _, result := range results {
+			if !result.Success {
+				os.Exit(1)
+			}
+		}
+	case "export":
+		logger.Info("执行导出操作，产品ID: %d", *productID)
+		if *productID == 0 {
+			logger.Fatal("导出操作需要指定产品ID (-product 参数)")
+		}
+
+		// 创建导出器
+		exporter, err := NewExporter(config)
+		if err != nil {
+			logger.Fatal("创建导出器失败: %v", err)
+		}
+
+		// 从禅道服务器导出需求
+		stories, result := exporter.ExportStories(*productID)
+		if !result.Success {
+			logger.Fatal("导出需求失败: %v", result.Error)
+		}
+
+		logger.Info("从禅道服务器导出 %d 个需求，耗时: %dms", result.StoryCount, result.ElapsedTime)
+
+		if len(stories) == 0 {
+			logger.Info("没有找到需要导出的需求")
+			os.Exit(0)
+		}
+
+		// 创建Excel写入器
+		writer, err := NewExcelWriter(config.ExcelFile)
+		if err != nil {
+			logger.Fatal("创建Excel写入器失败: %v", err)
+		}
+		defer writer.Close()
+
+		// 将需求写入Excel文件
+		err = writer.WriteStories(stories)
+		if err != nil {
+			logger.Fatal("写入Excel文件失败: %v", err)
+		}
+
+		// 保存Excel文件
+		err = writer.Save(config.ExcelFile)
+		if err != nil {
+			logger.Fatal("保存Excel文件失败: %v", err)
+		}
+
+		logger.Info("成功导出 %d 个需求到Excel文件: %s", len(stories), config.ExcelFile)
+		logger.Info("日志文件已保存至: %s", logger.GetLogFilePath())
+
+	default:
+		logger.Fatal("不支持的操作类型: %s，仅支持 import 或 export", *action)
 	}
 }
 
