@@ -14,6 +14,23 @@
 *   **详细报告**：生成包含导入结果、耗时统计和成功率的详尽报告。
 *   **灵活配置**：支持通过 YAML 文件进行配置，并可以通过命令行参数进行覆盖。
 
+## 📁 项目结构
+
+```
+.
+├── cmd/zentao_tool/          # 应用程序入口
+│   └── main.go
+├── internal/                  # 私有代码
+│   ├── config/               # 配置管理
+│   ├── excel/                # Excel读写操作
+│   ├── logger/               # 日志记录
+│   └── zentao/               # 禅道API封装
+├── pkg/story/                # 需求领域模型（可复用）
+├── config.yaml               # 配置文件
+├── requirements.xlsx         # 示例Excel文件
+└── README.md
+```
+
 ## 🛠️ 安装
 
 确保您的系统中已安装 **Go 1.16+**。
@@ -23,8 +40,11 @@
 git clone https://github.com/jan2xue/zentao_import_story.git
 cd zentao_import_story
 
+# 运行测试
+go test ./...
+
 # 编译可执行文件
-go build -o zentao_story_tool.exe
+go build -o zentao_story_tool.exe ./cmd/zentao_tool
 ```
 
 ## ⚙️ 配置说明

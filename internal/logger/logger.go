@@ -1,4 +1,5 @@
-package main
+// Package logger 提供日志记录功能
+package logger
 
 import (
 	"fmt"
@@ -14,6 +15,7 @@ type Logger struct {
 	errorLogger   *log.Logger
 	successLogger *log.Logger
 	file          *os.File
+	writers       []io.Writer
 }
 
 // NewLogger 创建新的日志记录器
@@ -37,7 +39,24 @@ func NewLogger() (*Logger, error) {
 		errorLogger:   errorLogger,
 		successLogger: successLogger,
 		file:          logFile,
+		writers:       []io.Writer{os.Stdout, logFile},
 	}, nil
+}
+
+// NewLoggerWithWriter 使用自定义writer创建日志记录器（用于测试）
+func NewLoggerWithWriter(writers ...io.Writer) *Logger {
+	multiWriter := io.MultiWriter(writers...)
+
+	infoLogger := log.New(multiWriter, "[INFO] ", log.Ldate|log.Ltime)
+	errorLogger := log.New(multiWriter, "[ERROR] ", log.Ldate|log.Ltime)
+	successLogger := log.New(multiWriter, "[SUCCESS] ", log.Ldate|log.Ltime)
+
+	return &Logger{
+		infoLogger:    infoLogger,
+		errorLogger:   errorLogger,
+		successLogger: successLogger,
+		writers:       writers,
+	}
 }
 
 // Close 关闭日志文件

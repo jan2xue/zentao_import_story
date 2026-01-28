@@ -1,11 +1,14 @@
-package main
+// Package zentao 封装禅道API客户端
+package zentao
 
 import (
 	"fmt"
 	"strconv"
 	"time"
 
-	"github.com/easysoft/go-zentao/v21/zentao"
+	zentaoapi "github.com/easysoft/go-zentao/v21/zentao"
+	"github.com/jan2xue/zentao_import_story/internal/logger"
+	"github.com/jan2xue/zentao_import_story/pkg/story"
 )
 
 // ExportResult 表示导出结果
@@ -18,49 +21,38 @@ type ExportResult struct {
 
 // Exporter 处理从禅道导出需求
 type Exporter struct {
-	client *zentao.Client
-	config *Config
+	client *Client
+	logger *logger.Logger
 }
 
 // NewExporter 创建新的导出器
-func NewExporter(config *Config) (*Exporter, error) {
-	client, err := zentao.NewBasicAuthClient(
-		config.ZentaoUsername,
-		config.ZentaoPassword,
-		zentao.WithBaseURL(config.ZentaoURL),
-		zentao.WithDevMode(),
-		zentao.WithDumpAll(),
-		zentao.WithoutProxy(),
-	)
-	if err != nil {
-		return nil, fmt.Errorf("创建禅道客户端失败: %w", err)
-	}
+func NewExporter(client *Client, log *logger.Logger) *Exporter {
 	return &Exporter{
 		client: client,
-		config: config,
-	}, nil
+		logger: log,
+	}
 }
 
 // ExportStories 从禅道服务器导出需求（支持分页）
-func (e *Exporter) ExportStories(productID int) ([]ExcelStory, ExportResult) {
+func (e *Exporter) ExportStories(productID int) ([]story.Story, ExportResult) {
 	result := ExportResult{}
 	startTime := time.Now()
 
-	logger.Info("正在从禅道服务器导出需求，产品ID: %d", productID)
+	e.logger.Info("正在从禅道服务器导出需求，产品ID: %d", productID)
 
-	var allExcelStories []ExcelStory
+	var allStories []story.Story
 	page := 1
 	totalFetched := 0
 
 	// 循环获取所有分页数据
 	for {
-		logger.Info("正在获取第 %d 页需求...", page)
+		e.logger.Info("正在获取第 %d 页需求...", page)
 
 		// 使用ZenTao API获取产品需求列表
-		storiesList, rsp, err := e.client.Stories.ProductsList(productID)
+		storiesList, rsp, err := e.client.GetClient().Stories.ProductsList(productID)
 		if err != nil || (rsp != nil && rsp.StatusCode >= 400) {
 			errMsg := fmt.Sprintf("获取产品需求列表失败(第%d页): %v", page, err)
-			logger.Error("%s", errMsg)
+			e.logger.Error("%s", errMsg)
 			result.Error = fmt.Errorf("%s", errMsg)
 			result.Success = false
 			result.ElapsedTime = time.Since(startTime).Milliseconds()
@@ -69,18 +61,18 @@ func (e *Exporter) ExportStories(productID int) ([]ExcelStory, ExportResult) {
 
 		// 获取当前页的需求数量
 		currentPageCount := len(storiesList.Stories)
-		logger.Info("第 %d 页获取到 %d 个需求", page, currentPageCount)
+		e.logger.Info("第 %d 页获取到 %d 个需求", page, currentPageCount)
 
 		// 如果当前页没有数据，退出循环
 		if currentPageCount == 0 {
 			break
 		}
 
-		// 将禅道需求转换为Excel格式
+		// 将禅道需求转换为Story格式
 		for _, zentaoStory := range storiesList.Stories {
-			excelStory := e.zentaoStoryToExcelStory(zentaoStory)
-			if excelStory != nil {
-				allExcelStories = append(allExcelStories, *excelStory)
+			s := e.zentaoStoryToStory(zentaoStory)
+			if s != nil {
+				allStories = append(allStories, *s)
 			}
 		}
 
@@ -89,13 +81,13 @@ func (e *Exporter) ExportStories(productID int) ([]ExcelStory, ExportResult) {
 		// 检查是否还有更多页
 		// 如果当前页的数量小于limit，说明已经是最后一页
 		if storiesList.Limit > 0 && currentPageCount < storiesList.Limit {
-			logger.Info("已到达最后一页")
+			e.logger.Info("已到达最后一页")
 			break
 		}
 
 		// 如果有total字段，检查是否已获取所有数据
 		if storiesList.Total > 0 && totalFetched >= storiesList.Total {
-			logger.Info("已获取所有 %d 个需求", storiesList.Total)
+			e.logger.Info("已获取所有 %d 个需求", storiesList.Total)
 			break
 		}
 
@@ -103,15 +95,15 @@ func (e *Exporter) ExportStories(productID int) ([]ExcelStory, ExportResult) {
 	}
 
 	result.Success = true
-	result.StoryCount = len(allExcelStories)
+	result.StoryCount = len(allStories)
 	result.ElapsedTime = time.Since(startTime).Milliseconds()
-	logger.Info("成功转换 %d 个需求为Excel格式，耗时: %dms", len(allExcelStories), result.ElapsedTime)
+	e.logger.Info("成功转换 %d 个需求，耗时: %dms", len(allStories), result.ElapsedTime)
 
-	return allExcelStories, result
+	return allStories, result
 }
 
-// zentaoStoryToExcelStory 将禅道需求转换为Excel需求格式
-func (e *Exporter) zentaoStoryToExcelStory(zentaoStory zentao.StoriesBody) *ExcelStory {
+// zentaoStoryToStory 将禅道需求转换为Story格式
+func (e *Exporter) zentaoStoryToStory(zentaoStory zentaoapi.StoriesBody) *story.Story {
 	// 从StoriesBody获取基本信息
 	priority := zentaoStory.Pri
 	if priority < 1 || priority > 4 {
@@ -135,11 +127,11 @@ func (e *Exporter) zentaoStoryToExcelStory(zentaoStory zentao.StoriesBody) *Exce
 	}
 
 	// 获取完整的需求信息，包括Spec和Verify字段
-	fullStory, rsp, err := e.client.Stories.GetByID(zentaoStory.ID)
+	fullStory, rsp, err := e.client.GetClient().Stories.GetByID(zentaoStory.ID)
 	if err != nil || (rsp != nil && rsp.StatusCode >= 400) {
-		logger.Error("获取需求详细信息失败，ID: %d, 错误: %v", zentaoStory.ID, err)
+		e.logger.Error("获取需求详细信息失败，ID: %d, 错误: %v", zentaoStory.ID, err)
 		// 如果获取详细信息失败，使用列表中的基本信息
-		return &ExcelStory{
+		return &story.Story{
 			Title:     zentaoStory.Title,
 			ProductID: zentaoStory.Product,
 			Priority:  priority,
@@ -149,7 +141,7 @@ func (e *Exporter) zentaoStoryToExcelStory(zentaoStory zentao.StoriesBody) *Exce
 		}
 	}
 
-	return &ExcelStory{
+	return &story.Story{
 		Title:      fullStory.Title,
 		ProductID:  fullStory.Product,
 		Priority:   fullStory.Pri,
