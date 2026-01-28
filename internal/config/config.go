@@ -1,4 +1,5 @@
-package main
+// Package config 处理应用程序配置
+package config
 
 // Config 存储程序配置信息
 type Config struct {
