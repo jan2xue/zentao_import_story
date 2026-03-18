@@ -30,7 +30,7 @@ func (r *Reader) Close() error {
 }
 
 // ReadStories 读取所有需求数据
-func (r *Reader) ReadStories(defaultPriority int) ([]story.Story, error) {
+func (r *Reader) ReadStories(defaultPriority int, storyType string) ([]story.Story, error) {
 	// 获取第一个工作表
 	sheets := r.file.GetSheetList()
 	if len(sheets) == 0 {
@@ -50,7 +50,7 @@ func (r *Reader) ReadStories(defaultPriority int) ([]story.Story, error) {
 	// 跳过标题行，处理数据行
 	var stories []story.Story
 	for i, row := range rows[1:] {
-		s, err := r.parseRow(row, defaultPriority)
+		s, err := r.parseRow(row, defaultPriority, storyType)
 		if err != nil {
 			return nil, fmt.Errorf("第%d行数据解析失败: %w", i+2, err)
 		}
@@ -61,18 +61,32 @@ func (r *Reader) ReadStories(defaultPriority int) ([]story.Story, error) {
 }
 
 // parseRow 解析Excel行数据为需求结构
-func (r *Reader) parseRow(row []string, defaultPriority int) (story.Story, error) {
-	if len(row) < 4 { // 检查必填字段
-		return story.Story{}, fmt.Errorf("行数据不完整，缺少必填字段")
+// Excel列定义: 标题 | 产品ID | 优先级 | 分类 | 需求描述 | 父需求ID | 来源 | 来源备注 | 预计工时 | 关键词 | 验收标准
+func (r *Reader) parseRow(row []string, defaultPriority int, storyTypeStr string) (story.Story, error) {
+	if len(row) < 4 { // 检查必填字段: 标题、产品ID、优先级、分类、描述
+		return story.Story{}, fmt.Errorf("行数据不完整，缺少必填字段，当前列数: %d", len(row))
 	}
 
-	// 解析产品ID
+	// 解析需求类型
+	storyType := story.StoryTypeStory // 默认为研发需求
+	switch strings.ToLower(storyTypeStr) {
+	case "epic":
+		storyType = story.StoryTypeEpic
+	case "requirement":
+		storyType = story.StoryTypeRequirement
+	case "story":
+		storyType = story.StoryTypeStory
+	default:
+		return story.Story{}, fmt.Errorf("无效的需求类型: %s，支持: epic/requirement/story", storyTypeStr)
+	}
+
+	// 解析产品ID (第2列)
 	productID, err := strconv.Atoi(strings.TrimSpace(row[1]))
 	if err != nil {
 		return story.Story{}, fmt.Errorf("产品ID必须是数字: %w", err)
 	}
 
-	// 解析优先级
+	// 解析优先级 (第3列)
 	priority := defaultPriority
 	if len(row) > 2 && strings.TrimSpace(row[2]) != "" {
 		p, err := strconv.Atoi(strings.TrimSpace(row[2]))
@@ -84,6 +98,7 @@ func (r *Reader) parseRow(row []string, defaultPriority int) (story.Story, error
 
 	// 创建需求对象
 	s := story.Story{
+		Type:      storyType,
 		Title:     strings.TrimSpace(row[0]),
 		ProductID: productID,
 		Priority:  priority,

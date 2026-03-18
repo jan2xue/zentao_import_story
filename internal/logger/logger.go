@@ -14,6 +14,7 @@ type Logger struct {
 	infoLogger    *log.Logger
 	errorLogger   *log.Logger
 	successLogger *log.Logger
+	debugLogger   *log.Logger
 	file          *os.File
 	writers       []io.Writer
 }
@@ -33,11 +34,13 @@ func NewLogger() (*Logger, error) {
 	infoLogger := log.New(multiWriter, "[INFO] ", log.Ldate|log.Ltime)
 	errorLogger := log.New(multiWriter, "[ERROR] ", log.Ldate|log.Ltime)
 	successLogger := log.New(multiWriter, "[SUCCESS] ", log.Ldate|log.Ltime)
+	debugLogger := log.New(multiWriter, "[DEBUG] ", log.Ldate|log.Ltime)
 
 	return &Logger{
 		infoLogger:    infoLogger,
 		errorLogger:   errorLogger,
 		successLogger: successLogger,
+		debugLogger:   debugLogger,
 		file:          logFile,
 		writers:       []io.Writer{os.Stdout, logFile},
 	}, nil
@@ -50,18 +53,23 @@ func NewLoggerWithWriter(writers ...io.Writer) *Logger {
 	infoLogger := log.New(multiWriter, "[INFO] ", log.Ldate|log.Ltime)
 	errorLogger := log.New(multiWriter, "[ERROR] ", log.Ldate|log.Ltime)
 	successLogger := log.New(multiWriter, "[SUCCESS] ", log.Ldate|log.Ltime)
+	debugLogger := log.New(multiWriter, "[DEBUG] ", log.Ldate|log.Ltime)
 
 	return &Logger{
 		infoLogger:    infoLogger,
 		errorLogger:   errorLogger,
 		successLogger: successLogger,
+		debugLogger:   debugLogger,
 		writers:       writers,
 	}
 }
 
 // Close 关闭日志文件
 func (l *Logger) Close() error {
-	return l.file.Close()
+	if l.file != nil {
+		return l.file.Close()
+	}
+	return nil
 }
 
 // Info 记录信息级别的日志
@@ -79,6 +87,22 @@ func (l *Logger) Success(format string, v ...interface{}) {
 	l.successLogger.Printf(format, v...)
 }
 
+// Debug 记录调试级别的日志
+func (l *Logger) Debug(format string, v ...interface{}) {
+	l.debugLogger.Printf(format, v...)
+}
+
+// ErrorWithDetail 记录详细错误信息（用于API调用失败等场景）
+func (l *Logger) ErrorWithDetail(operation string, err error, details map[string]interface{}) {
+	l.errorLogger.Printf("========== 错误详情开始 ==========")
+	l.errorLogger.Printf("操作: %s", operation)
+	l.errorLogger.Printf("错误: %v", err)
+	for key, value := range details {
+		l.errorLogger.Printf("  %s: %v", key, value)
+	}
+	l.errorLogger.Printf("========== 错误详情结束 ==========")
+}
+
 // Fatal 记录致命错误并退出程序
 func (l *Logger) Fatal(format string, v ...interface{}) {
 	l.errorLogger.Printf(format, v...)
@@ -88,6 +112,9 @@ func (l *Logger) Fatal(format string, v ...interface{}) {
 
 // GetLogFilePath 获取日志文件的完整路径
 func (l *Logger) GetLogFilePath() string {
+	if l.file == nil {
+		return ""
+	}
 	absPath, err := filepath.Abs(l.file.Name())
 	if err != nil {
 		return l.file.Name()

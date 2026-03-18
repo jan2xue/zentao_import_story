@@ -3,7 +3,7 @@ module github.com/jan2xue/zentao_import_story
 go 1.24.0
 
 require (
-	github.com/easysoft/go-zentao/v21 v21.2.1
+	github.com/imroc/req/v3 v3.50.0
 	github.com/xuri/excelize/v2 v2.9.1
 	gopkg.in/yaml.v3 v3.0.1
 )
@@ -11,12 +11,10 @@ require (
 require (
 	github.com/andybalholm/brotli v1.1.1 // indirect
 	github.com/cloudflare/circl v1.5.0 // indirect
-	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/go-task/slim-sprig/v3 v3.0.0 // indirect
 	github.com/google/pprof v0.0.0-20241210010833-40e02aabc2ad // indirect
 	github.com/hashicorp/errwrap v1.1.0 // indirect
 	github.com/hashicorp/go-multierror v1.1.1 // indirect
-	github.com/imroc/req/v3 v3.50.0 // indirect
 	github.com/klauspost/compress v1.17.11 // indirect
 	github.com/onsi/ginkgo/v2 v2.22.0 // indirect
 	github.com/quic-go/qpack v0.5.1 // indirect

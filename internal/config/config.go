@@ -12,7 +12,9 @@ type Config struct {
 	ExcelFile string `yaml:"excelFile"`
 
 	// 默认值配置
-	DefaultPriority int `yaml:"defaultPriority"` // 默认优先级 1-4
+	DefaultPriority int    `yaml:"defaultPriority"` // 默认优先级 1-4
+	DefaultReviewer string `yaml:"defaultReviewer"` // 默认评审人（用户名）
+	DefaultModule   int    `yaml:"defaultModule"`   // 默认模块ID（用户需求需要）
 }
 
 // NewDefaultConfig 返回默认配置

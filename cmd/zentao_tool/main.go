@@ -2,10 +2,13 @@
 package main
 
 import (
+	"bufio"
 	"flag"
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
+	"strings"
 
 	"gopkg.in/yaml.v3"
 
@@ -27,8 +30,10 @@ func main() {
 	// 解析命令行参数
 	configPath := flag.String("config", "config.yaml", "配置文件路径")
 	excelPath := flag.String("excel", "requirements.xlsx", "Excel文件路径")
-	action := flag.String("action", "import", "操作类型: import(导入) 或 export(导出)")
+	action := flag.String("action", "import", "操作类型: import(导入) 或 delete(删除)")
 	productID := flag.Int("product", 0, "产品ID(导出时使用)")
+	storyType := flag.String("type", "story", "需求类型: epic(业务需求)/requirement(用户需求)/story(研发需求)")
+	storyIDs := flag.String("ids", "", "要删除的需求ID列表，多个ID用逗号分隔(删除时使用)")
 	flag.Parse()
 
 	// 加载配置文件
@@ -47,24 +52,26 @@ func main() {
 		log.Fatal("%v", err)
 	}
 
+	// 验证需求类型
+	if *storyType != "epic" && *storyType != "requirement" && *storyType != "story" {
+		log.Fatal("无效的需求类型: %s，仅支持 epic/requirement/story", *storyType)
+	}
+
 	// 根据操作类型执行相应功能
 	switch *action {
 	case "import":
-		log.Info("执行导入操作")
-		handleImport(cfg, log)
-	case "export":
-		log.Info("执行导出操作，产品ID: %d", *productID)
-		if *productID == 0 {
-			log.Fatal("导出操作需要指定产品ID (-product 参数)")
-		}
-		handleExport(cfg, log, *productID)
+		log.Info("执行导入操作，需求类型: %s", *storyType)
+		handleImport(cfg, log, *storyType)
+	case "delete":
+		log.Info("执行删除操作，需求类型: %s", *storyType)
+		handleDelete(cfg, log, *storyType, *storyIDs, *productID)
 	default:
-		log.Fatal("不支持的操作类型: %s，仅支持 import 或 export", *action)
+		log.Fatal("不支持的操作类型: %s，仅支持 import 或 delete", *action)
 	}
 }
 
 // handleImport 处理导入操作
-func handleImport(cfg *config.Config, log *logger.Logger) {
+func handleImport(cfg *config.Config, log *logger.Logger, storyType string) {
 	// 创建Excel读取器
 	reader, err := excel.NewReader(cfg.ExcelFile)
 	if err != nil {
@@ -73,7 +80,7 @@ func handleImport(cfg *config.Config, log *logger.Logger) {
 	defer reader.Close()
 
 	// 读取需求数据
-	stories, err := reader.ReadStories(cfg.DefaultPriority)
+	stories, err := reader.ReadStories(cfg.DefaultPriority, storyType)
 	if err != nil {
 		log.Fatal("读取Excel数据失败: %v", err)
 	}
@@ -106,51 +113,154 @@ func handleImport(cfg *config.Config, log *logger.Logger) {
 	}
 }
 
-// handleExport 处理导出操作
-func handleExport(cfg *config.Config, log *logger.Logger, productID int) {
+// handleDelete 处理删除操作
+func handleDelete(cfg *config.Config, log *logger.Logger, storyType string, storyIDsStr string, productID int) {
+	var storyIDs []int
+
+	// 解析需求ID列表
+	if storyIDsStr != "" {
+		// 从命令行参数解析ID列表
+		idStrs := strings.Split(storyIDsStr, ",")
+		for _, idStr := range idStrs {
+			idStr = strings.TrimSpace(idStr)
+			if idStr == "" {
+				continue
+			}
+			id, err := strconv.Atoi(idStr)
+			if err != nil {
+				log.Fatal("无效的需求ID: %s", idStr)
+			}
+			storyIDs = append(storyIDs, id)
+		}
+	} else if productID > 0 {
+		// 从产品ID获取所有需求ID
+		storyIDs = fetchStoryIDsFromProduct(cfg, log, productID, storyType)
+		if len(storyIDs) == 0 {
+			log.Info("产品 %d 下没有找到任何需求", productID)
+			return
+		}
+	} else {
+		log.Fatal("删除操作需要指定需求ID列表 (-ids 参数) 或产品ID (-product 参数)")
+	}
+
+	// 显示确认提示
+	fmt.Printf("\n⚠️  警告: 即将删除 %d 个需求\n", len(storyIDs))
+	fmt.Printf("需求类型: %s\n", storyType)
+	fmt.Printf("需求ID列表: %v\n", storyIDs)
+	fmt.Printf("\n此操作不可撤销，是否继续? (yes/no): ")
+
+	reader := bufio.NewReader(os.Stdin)
+	response, err := reader.ReadString('\n')
+	if err != nil {
+		log.Fatal("读取用户输入失败: %v", err)
+	}
+
+	response = strings.TrimSpace(strings.ToLower(response))
+	if response != "yes" && response != "y" {
+		log.Info("取消删除操作")
+		return
+	}
+
 	// 创建禅道客户端
 	client, err := zentao.NewClient(cfg)
 	if err != nil {
 		log.Fatal("创建禅道客户端失败: %v", err)
 	}
 
-	// 创建导出器
-	exporter := zentao.NewExporter(client, log)
+	// 创建删除器
+	deleter := zentao.NewDeleter(client, log)
 
-	// 从禅道服务器导出需求
-	stories, result := exporter.ExportStories(productID)
-	if !result.Success {
-		log.Fatal("导出需求失败: %v", result.Error)
-	}
+	// 执行删除
+	results := deleter.DeleteStories(storyIDs, storyType)
 
-	log.Info("从禅道服务器导出 %d 个需求，耗时: %dms", result.StoryCount, result.ElapsedTime)
+	// 生成并打印报告
+	report := deleter.GenerateDeleteReport(results)
+	log.Info("\n%s", report)
 
-	if len(stories) == 0 {
-		log.Info("没有找到需要导出的需求")
-		os.Exit(0)
-	}
-
-	// 创建Excel写入器
-	writer, err := excel.NewWriter(cfg.ExcelFile)
-	if err != nil {
-		log.Fatal("创建Excel写入器失败: %v", err)
-	}
-	defer writer.Close()
-
-	// 将需求写入Excel文件
-	err = writer.WriteStories(stories)
-	if err != nil {
-		log.Fatal("写入Excel文件失败: %v", err)
-	}
-
-	// 保存Excel文件
-	err = writer.Save(cfg.ExcelFile)
-	if err != nil {
-		log.Fatal("保存Excel文件失败: %v", err)
-	}
-
-	log.Info("成功导出 %d 个需求到Excel文件: %s", len(stories), cfg.ExcelFile)
 	log.Info("日志文件已保存至: %s", log.GetLogFilePath())
+
+	// 如果有失败的删除，使用非零状态码退出
+	for _, result := range results {
+		if !result.Success {
+			os.Exit(1)
+		}
+	}
+}
+
+// fetchStoryIDsFromProduct 从产品获取所有需求ID
+func fetchStoryIDsFromProduct(cfg *config.Config, log *logger.Logger, productID int, storyType string) []int {
+	// 创建禅道客户端
+	client, err := zentao.NewClient(cfg)
+	if err != nil {
+		log.Fatal("创建禅道客户端失败: %v", err)
+	}
+
+	var storyIDs []int
+
+	switch storyType {
+	case "story":
+		resp, _, err := client.Story.ProductsList(productID)
+		if err != nil {
+			log.Fatal("获取产品需求列表失败: %v", err)
+		}
+		for _, s := range resp.Stories {
+			storyIDs = append(storyIDs, s.ID)
+		}
+	case "requirement":
+		resp, _, err := client.Requirement.ProductsList(productID)
+		if err != nil {
+			log.Fatal("获取产品用户需求列表失败: %v", err)
+		}
+		// 尝试从map中提取ID
+		if data, ok := resp["requirements"]; ok {
+			if reqs, ok := data.([]interface{}); ok {
+				for _, req := range reqs {
+					if reqMap, ok := req.(map[string]interface{}); ok {
+						if id, ok := reqMap["id"]; ok {
+							switch v := id.(type) {
+							case float64:
+								storyIDs = append(storyIDs, int(v))
+							case int:
+								storyIDs = append(storyIDs, v)
+							case string:
+								if idInt, err := strconv.Atoi(v); err == nil {
+									storyIDs = append(storyIDs, idInt)
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+	case "epic":
+		resp, _, err := client.Epic.ProductsList(productID)
+		if err != nil {
+			log.Fatal("获取产品业务需求列表失败: %v", err)
+		}
+		// 尝试从map中提取ID
+		if data, ok := resp["epics"]; ok {
+			if epics, ok := data.([]interface{}); ok {
+				for _, epic := range epics {
+					if epicMap, ok := epic.(map[string]interface{}); ok {
+						if id, ok := epicMap["id"]; ok {
+							switch v := id.(type) {
+							case float64:
+								storyIDs = append(storyIDs, int(v))
+							case int:
+								storyIDs = append(storyIDs, v)
+							case string:
+								if idInt, err := strconv.Atoi(v); err == nil {
+									storyIDs = append(storyIDs, idInt)
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+
+	return storyIDs
 }
 
 // loadConfig 从YAML文件加载配置

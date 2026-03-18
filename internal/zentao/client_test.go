@@ -32,13 +32,12 @@ func TestNewClient(t *testing.T) {
 	}
 }
 
-func TestClient_GetClient(t *testing.T) {
-	// 创建 nil client 测试 GetClient 方法
+func TestClient_GetToken(t *testing.T) {
+	// 创建 nil client 测试 GetToken 方法
 	var client *Client
-	
+
 	// 这里只测试方法存在性，实际调用需要有效的 client
-	// 由于 GetClient 可能 panic，这里做简单检查
 	if client != nil {
-		_ = client.GetClient()
+		_ = client.GetToken()
 	}
 }
