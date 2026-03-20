@@ -93,15 +93,83 @@ func (s *RequirementService) DeleteByID(id int) (map[string]interface{}, *req.Re
 	return resp, rsp, nil
 }
 
-// ProductsList 获取产品用户需求列表
+// RequirementListItem 用户需求列表项
+type RequirementListItem struct {
+	ID          int         `json:"id"`
+	Parent      interface{} `json:"parent"`
+	Product     int         `json:"product"`
+	Branch      int         `json:"branch"`
+	Module      int         `json:"module"`
+	Plan        interface{} `json:"plan"`
+	Source      string      `json:"source"`
+	SourceNote  string      `json:"sourceNote"`
+	Title       string      `json:"title"`
+	Keywords    string      `json:"keywords"`
+	Type        string      `json:"type"`
+	Category    string      `json:"category"`
+	Pri         int         `json:"pri"`
+	Estimate    interface{} `json:"estimate"`
+	Status      string      `json:"status"`
+	Stage       string      `json:"stage"`
+	OpenedBy    string      `json:"openedBy"`
+	OpenedDate  string      `json:"openedDate"`
+	AssignedTo  string      `json:"assignedTo"`
+	Spec        string      `json:"spec"`
+	Verify      string      `json:"verify"`
+}
+
+// RequirementListWithPagerResponse 带分页信息的用户需求列表响应
+type RequirementListWithPagerResponse struct {
+	Status       string                `json:"status"`
+	Requirements []RequirementListItem `json:"requirements"`
+	Pager        Pager                 `json:"pager"`
+}
+
+// ProductsList 获取产品用户需求列表（单页）
 // GET /api.php/v2/products/{id}/requirements
-func (s *RequirementService) ProductsList(productID int) (map[string]interface{}, *req.Response, error) {
-	var resp map[string]interface{}
-	rsp, err := s.client.R().
-		SetSuccessResult(&resp).
-		Get(s.client.RequestURL(fmt.Sprintf("/products/%d/requirements", productID)))
+func (s *RequirementService) ProductsList(productID int, opts *ListOptions) (*RequirementListWithPagerResponse, *req.Response, error) {
+	var resp RequirementListWithPagerResponse
+	req := s.client.R().SetSuccessResult(&resp)
+	
+	if opts != nil {
+		if opts.RecPerPage > 0 {
+			req.SetQueryParam("recPerPage", fmt.Sprintf("%d", opts.RecPerPage))
+		}
+		if opts.PageID > 0 {
+			req.SetQueryParam("pageID", fmt.Sprintf("%d", opts.PageID))
+		}
+	}
+	
+	rsp, err := req.Get(s.client.RequestURL(fmt.Sprintf("/products/%d/requirements", productID)))
 	if err != nil {
 		return nil, rsp, err
 	}
-	return resp, rsp, nil
+	return &resp, rsp, nil
+}
+
+// ProductsListAll 获取产品所有用户需求（自动分页）
+// GET /api.php/v2/products/{id}/requirements
+func (s *RequirementService) ProductsListAll(productID int) ([]RequirementListItem, error) {
+	var allItems []RequirementListItem
+	pageID := 1
+	pageSize := 100
+	
+	for {
+		resp, _, err := s.ProductsList(productID, &ListOptions{
+			PageID:     pageID,
+			RecPerPage: pageSize,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("获取用户需求列表失败(页%d): %w", pageID, err)
+		}
+		
+		allItems = append(allItems, resp.Requirements...)
+		
+		if resp.Pager.PageTotal == 0 || pageID >= resp.Pager.PageTotal {
+			break
+		}
+		pageID++
+	}
+	
+	return allItems, nil
 }

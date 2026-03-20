@@ -135,17 +135,76 @@ type StoryDetailResponse struct {
 	Story  StoryListItem `json:"story"`
 }
 
-// ProductsList 获取产品研发需求列表
+// ListOptions 列表查询选项
+type ListOptions struct {
+	RecTotal    int `url:"recTotal,omitempty"`    // 总记录数
+	RecPerPage  int `url:"recPerPage,omitempty"`  // 每页记录数
+	PageID      int `url:"pageID,omitempty"`      // 页码
+}
+
+// Pager 分页信息
+type Pager struct {
+	RecTotal    int `json:"recTotal"`    // 总记录数
+	RecPerPage  int `json:"recPerPage"`  // 每页记录数
+	PageID      int `json:"pageID"`      // 当前页码
+	PageTotal   int `json:"pageTotal"`   // 总页数
+}
+
+// StoryListWithPagerResponse 带分页信息的需求列表响应
+type StoryListWithPagerResponse struct {
+	Status  string         `json:"status"`
+	Stories []StoryListItem `json:"stories"`
+	Pager   Pager          `json:"pager"`
+}
+
+// ProductsList 获取产品研发需求列表（单页）
 // GET /api.php/v2/products/{id}/stories
-func (s *StoryService) ProductsList(productID int) (*StoryListResponse, *req.Response, error) {
-	var resp StoryListResponse
-	rsp, err := s.client.R().
-		SetSuccessResult(&resp).
-		Get(s.client.RequestURL(fmt.Sprintf("/products/%d/stories", productID)))
+func (s *StoryService) ProductsList(productID int, opts *ListOptions) (*StoryListWithPagerResponse, *req.Response, error) {
+	var resp StoryListWithPagerResponse
+	req := s.client.R().SetSuccessResult(&resp)
+	
+	if opts != nil {
+		if opts.RecPerPage > 0 {
+			req.SetQueryParam("recPerPage", fmt.Sprintf("%d", opts.RecPerPage))
+		}
+		if opts.PageID > 0 {
+			req.SetQueryParam("pageID", fmt.Sprintf("%d", opts.PageID))
+		}
+	}
+	
+	rsp, err := req.Get(s.client.RequestURL(fmt.Sprintf("/products/%d/stories", productID)))
 	if err != nil {
 		return nil, rsp, err
 	}
 	return &resp, rsp, nil
+}
+
+// ProductsListAll 获取产品所有研发需求（自动分页）
+// GET /api.php/v2/products/{id}/stories
+func (s *StoryService) ProductsListAll(productID int) ([]StoryListItem, error) {
+	var allStories []StoryListItem
+	pageID := 1
+	pageSize := 100 // 每页获取100条，减少请求次数
+	
+	for {
+		resp, _, err := s.ProductsList(productID, &ListOptions{
+			PageID:     pageID,
+			RecPerPage: pageSize,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("获取需求列表失败(页%d): %w", pageID, err)
+		}
+		
+		allStories = append(allStories, resp.Stories...)
+		
+		// 检查是否还有下一页
+		if resp.Pager.PageTotal == 0 || pageID >= resp.Pager.PageTotal {
+			break
+		}
+		pageID++
+	}
+	
+	return allStories, nil
 }
 
 // GetStoryDetail 获取需求详情（返回结构化数据）

@@ -199,64 +199,31 @@ func fetchStoryIDsFromProduct(cfg *config.Config, log *logger.Logger, productID 
 
 	switch storyType {
 	case "story":
-		resp, _, err := client.Story.ProductsList(productID)
+		stories, err := client.Story.ProductsListAll(productID)
 		if err != nil {
 			log.Fatal("获取产品需求列表失败: %v", err)
 		}
-		for _, s := range resp.Stories {
+		log.Info("产品 %d 下共有 %d 个研发需求", productID, len(stories))
+		for _, s := range stories {
 			storyIDs = append(storyIDs, s.ID)
 		}
 	case "requirement":
-		resp, _, err := client.Requirement.ProductsList(productID)
+		requirements, err := client.Requirement.ProductsListAll(productID)
 		if err != nil {
 			log.Fatal("获取产品用户需求列表失败: %v", err)
 		}
-		// 尝试从map中提取ID
-		if data, ok := resp["requirements"]; ok {
-			if reqs, ok := data.([]interface{}); ok {
-				for _, req := range reqs {
-					if reqMap, ok := req.(map[string]interface{}); ok {
-						if id, ok := reqMap["id"]; ok {
-							switch v := id.(type) {
-							case float64:
-								storyIDs = append(storyIDs, int(v))
-							case int:
-								storyIDs = append(storyIDs, v)
-							case string:
-								if idInt, err := strconv.Atoi(v); err == nil {
-									storyIDs = append(storyIDs, idInt)
-								}
-							}
-						}
-					}
-				}
-			}
+		log.Info("产品 %d 下共有 %d 个用户需求", productID, len(requirements))
+		for _, r := range requirements {
+			storyIDs = append(storyIDs, r.ID)
 		}
 	case "epic":
-		resp, _, err := client.Epic.ProductsList(productID)
+		epics, err := client.Epic.ProductsListAll(productID)
 		if err != nil {
 			log.Fatal("获取产品业务需求列表失败: %v", err)
 		}
-		// 尝试从map中提取ID
-		if data, ok := resp["epics"]; ok {
-			if epics, ok := data.([]interface{}); ok {
-				for _, epic := range epics {
-					if epicMap, ok := epic.(map[string]interface{}); ok {
-						if id, ok := epicMap["id"]; ok {
-							switch v := id.(type) {
-							case float64:
-								storyIDs = append(storyIDs, int(v))
-							case int:
-								storyIDs = append(storyIDs, v)
-							case string:
-								if idInt, err := strconv.Atoi(v); err == nil {
-									storyIDs = append(storyIDs, idInt)
-								}
-							}
-						}
-					}
-				}
-			}
+		log.Info("产品 %d 下共有 %d 个业务需求", productID, len(epics))
+		for _, e := range epics {
+			storyIDs = append(storyIDs, e.ID)
 		}
 	}
 
