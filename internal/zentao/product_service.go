@@ -7,18 +7,17 @@ import (
 
 // Product 产品信息
 type Product struct {
-	ID          int         `json:"id"`
-	Name        string      `json:"name"`
-	Code        string      `json:"code"`
-	Type        string      `json:"type"`
-	Status      string      `json:"status"`
-	Description interface{} `json:"desc"`
+	ID     int    `json:"id"`
+	Name   string `json:"name"`
+	Code   string `json:"code"`
+	Type   string `json:"type"`
+	Status string `json:"status"`
 }
 
 // ProductDetailResponse 产品详情响应
 type ProductDetailResponse struct {
-	Status string                 `json:"status"`
-	Data   map[string]interface{} `json:"data"`
+	Status  string   `json:"status"`
+	Product Product  `json:"product"`
 }
 
 // ProductService 产品服务
@@ -50,22 +49,7 @@ func (s *ProductService) GetByID(id int) (*Product, error) {
 		return nil, fmt.Errorf("获取产品信息失败: status=%s", resp.Status)
 	}
 	
-	// 从 map 中提取产品信息
-	product := &Product{ID: id}
-	if resp.Data != nil {
-		if name, ok := resp.Data["name"]; ok {
-			if nameStr, ok := name.(string); ok {
-				product.Name = nameStr
-			}
-		}
-		if code, ok := resp.Data["code"]; ok {
-			if codeStr, ok := code.(string); ok {
-				product.Code = codeStr
-			}
-		}
-	}
-	
-	return product, nil
+	return &resp.Product, nil
 }
 
 // GetProductInfo 批量获取多个产品的ID和名称映射
