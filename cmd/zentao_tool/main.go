@@ -87,10 +87,72 @@ func handleImport(cfg *config.Config, log *logger.Logger, storyType string) {
 
 	log.Info("从Excel中读取到 %d 个需求", len(stories))
 
+	// 提取所有唯一的产品ID
+	productIDSet := make(map[int]bool)
+	for _, s := range stories {
+		productIDSet[s.ProductID] = true
+	}
+	
+	// 转换为切片
+	productIDs := make([]int, 0, len(productIDSet))
+	for id := range productIDSet {
+		productIDs = append(productIDs, id)
+	}
+
 	// 创建禅道客户端
 	client, err := zentao.NewClient(cfg)
 	if err != nil {
 		log.Fatal("创建禅道客户端失败: %v", err)
+	}
+
+	// 获取产品名称信息
+	productInfo, err := client.Product.GetProductInfo(productIDs)
+	if err != nil {
+		log.Error("获取产品信息失败: %v，将仅显示产品ID", err)
+	}
+
+	// 显示产品确认信息
+	fmt.Printf("\n" + strings.Repeat("=", 60) + "\n")
+	fmt.Printf("                    导入确认\n")
+	fmt.Printf(strings.Repeat("=", 60) + "\n\n")
+	
+	fmt.Printf("需求类型: %s\n", getStoryTypeName(storyType))
+	fmt.Printf("需求数量: %d 条\n\n", len(stories))
+	
+	fmt.Printf("涉及产品:\n")
+	fmt.Printf("%-10s %-40s %-10s\n", "产品ID", "产品名称", "需求数量")
+	fmt.Printf("%-10s %-40s %-10s\n", "------", "----------------------------------------", "------")
+	
+	// 统计每个产品的需求数量
+	productCount := make(map[int]int)
+	for _, s := range stories {
+		productCount[s.ProductID]++
+	}
+	
+	for _, productID := range productIDs {
+		productName := productInfo[productID]
+		if productName == "" {
+			productName = "[未知产品]"
+		}
+		fmt.Printf("%-10d %-40s %-10d\n", productID, productName, productCount[productID])
+	}
+	
+	fmt.Printf("\n" + strings.Repeat("=", 60) + "\n")
+	fmt.Printf("\n⚠️  重要提示：请仔细核对上述产品信息！\n")
+	fmt.Printf("   错误的产品ID会导致数据被导入到错误的产品下。\n")
+	fmt.Printf("\n是否确认导入? (yes/no): ")
+
+	// 读取用户确认
+	confirmReader := bufio.NewReader(os.Stdin)
+	response, err := confirmReader.ReadString('\n')
+	if err != nil {
+		log.Fatal("读取用户输入失败: %v", err)
+	}
+
+	response = strings.TrimSpace(strings.ToLower(response))
+	if response != "yes" && response != "y" {
+		log.Info("取消导入操作")
+		return
 	}
 
 	// 创建导入器
@@ -110,6 +172,20 @@ func handleImport(cfg *config.Config, log *logger.Logger, storyType string) {
 		if !result.Success {
 			os.Exit(1)
 		}
+	}
+}
+
+// getStoryTypeName 获取需求类型的中文名称
+func getStoryTypeName(storyType string) string {
+	switch storyType {
+	case "story":
+		return "研发需求 (story)"
+	case "requirement":
+		return "用户需求 (requirement)"
+	case "epic":
+		return "业务需求 (epic)"
+	default:
+		return storyType
 	}
 }
 

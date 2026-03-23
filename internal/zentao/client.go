@@ -33,6 +33,7 @@ type Client struct {
 	Epic        *EpicService
 	Requirement *RequirementService
 	Story       *StoryService
+	Product     *ProductService
 }
 
 // NewClient 创建新的禅道客户端
@@ -70,6 +71,7 @@ func NewClient(cfg *config.Config) (*Client, error) {
 	c.Epic = NewEpicService(c)
 	c.Requirement = NewRequirementService(c)
 	c.Story = NewStoryService(c)
+	c.Product = NewProductService(c)
 
 	return c, nil
 }
