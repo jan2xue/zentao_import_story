@@ -9,30 +9,49 @@
 
 *   **批量导入**：数秒内导入成百上千条需求。
 *   **批量删除**：支持按需求ID或产品ID批量删除需求，删除前有确认提示。
+*   **产品确认**：导入前显示产品信息并要求用户确认，防止数据导入错误产品。
+*   **自动分页**：删除功能支持自动分页获取，突破API默认20条限制。
 *   **多类型支持**：支持业务需求(epic)、用户需求(requirement)、研发需求(story)三种类型。
 *   **智能字段映射**：自动将 Excel 列映射到禅道需求字段（标题、优先级、分类等）。
 *   **数据验证**：预检查数据完整性，确保必填字段（标题、产品 ID 等）存在且有效。
 *   **详细报告**：生成包含导入/删除结果、耗时统计和成功率的详尽报告。
 *   **灵活配置**：支持通过 YAML 文件进行配置，并可以通过命令行参数进行覆盖。
 
+## ⚠️ 系统要求
+
+*   **禅道版本**：V21.7.9 及以上（开源版）/ V21.0+（企业版/旗舰版/IPD版）
+*   **操作系统**：Windows 7/10/11、Linux、macOS
+*   **Go 版本**：1.16+（仅编译时需要）
+
 ## 📁 项目结构
 
 ```
 .
-├── cmd/zentao_tool/          # 应用程序入口
-│   └── main.go
+├── cmd/
+│   ├── zentao_tool/          # 主程序入口
+│   │   └── main.go
+│   └── release/              # 发布打包工具
+│       └── main.go
 ├── internal/                  # 私有代码
 │   ├── config/               # 配置管理
 │   ├── excel/                # Excel读写操作
 │   ├── logger/               # 日志记录
 │   └── zentao/               # 禅道API封装
 ├── pkg/story/                # 需求领域模型（可复用）
-├── config.yaml               # 配置文件
+├── config.example.yaml       # 配置文件示例
 ├── requirements.xlsx         # 示例Excel文件
+├── changelog.txt             # 版本更新记录
+├── 使用说明.txt              # 详细使用说明
 └── README.md
 ```
 
 ## 🛠️ 安装
+
+### 方式一：下载发布版本
+
+从 `release/` 目录下载对应版本的 zip 包，解压后即可使用。
+
+### 方式二：从源码编译
 
 确保您的系统中已安装 **Go 1.16+**。
 
@@ -41,11 +60,20 @@
 git clone https://github.com/jan2xue/zentao_import_story.git
 cd zentao_import_story
 
-# 运行测试
-go test ./...
+# 安装依赖
+go mod download
 
 # 编译可执行文件
 go build -o zentao_story_tool.exe ./cmd/zentao_tool
+```
+
+### 方式三：生成发布包
+
+```bash
+# 运行发布打包工具
+go run ./cmd/release -version 1.1.0
+
+# 生成的文件位于 release/ 目录
 ```
 
 ## ⚙️ 配置说明
@@ -107,15 +135,21 @@ defaultModule: 0                        # 默认模块ID，创建用户需求时
 ./zentao_story_tool.exe -action import -type epic
 ```
 
+> [!NOTE]
+> 导入前会显示产品信息确认界面，需要用户确认产品ID和名称无误后才会执行导入，防止数据导入错误产品。
+
 ### 删除需求
 
 ```powershell
 # 按需求ID删除（支持多个ID，逗号分隔）
 ./zentao_story_tool.exe -action delete -type story -ids 123,456,789
 
-# 按产品ID删除该产品下所有需求
+# 按产品ID删除该产品下所有需求（支持自动分页，突破20条限制）
 ./zentao_story_tool.exe -action delete -type story -product 78
 ```
+
+> [!NOTE]
+> 按产品删除时，工具会自动分页获取所有需求，不受API默认20条分页限制。
 
 > [!WARNING]
 > 删除操作会显示确认提示，需要输入 `yes` 或 `y` 确认后才会执行。此操作不可撤销！
@@ -230,6 +264,10 @@ defaultModule: 0                        # 默认模块ID，创建用户需求时
 *   **日志记录**：程序运行详情将保存到当前目录下的 `import.log` 文件中。
 *   **执行报告**：每次运行结束后，控制台都会打印一份结果报告。
 *   **容错处理**：工具独立处理每条数据，单条失败不会中断整个流程。
+
+## 📋 版本历史
+
+详见 [changelog.txt](changelog.txt)
 
 ## 📄 许可证
 
