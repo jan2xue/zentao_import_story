@@ -31,7 +31,7 @@ func main() {
 	configPath := flag.String("config", "config.yaml", "配置文件路径")
 	excelPath := flag.String("excel", "requirements.xlsx", "Excel文件路径")
 	action := flag.String("action", "import", "操作类型: import(导入) 或 delete(删除)")
-	productID := flag.Int("product", 0, "产品ID(导出时使用)")
+	productID := flag.Int("product", 0, "产品ID(删除时使用)")
 	storyType := flag.String("type", "story", "需求类型: epic(业务需求)/requirement(用户需求)/story(研发需求)")
 	storyIDs := flag.String("ids", "", "要删除的需求ID列表，多个ID用逗号分隔(删除时使用)")
 	flag.Parse()
