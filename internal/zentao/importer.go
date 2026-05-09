@@ -3,6 +3,8 @@ package zentao
 
 import (
 	"fmt"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/imroc/req/v3"
@@ -23,12 +25,12 @@ type ImportResult struct {
 
 // Importer 处理需求导入到禅道
 type Importer struct {
-	client        *Client
-	logger        *logger.Logger
-	epicCreator   EpicCreator
-	reqCreator    RequirementCreator
-	storyCreator  StoryCreator
-	config        ConfigProvider
+	client       *Client
+	logger       *logger.Logger
+	epicCreator  EpicCreator
+	reqCreator   RequirementCreator
+	storyCreator StoryCreator
+	config       ConfigProvider
 }
 
 // NewImporter 创建新的导入器
@@ -123,6 +125,7 @@ func (i *Importer) createEpic(s *story.Story) (int, *req.Response, error) {
 		ProductID:  s.ProductID,
 		Title:      s.Title,
 		Pri:        s.Priority,
+		Grade:      1,
 		Spec:       s.Spec,
 		Category:   s.Category,
 		Parent:     s.ParentID,
@@ -153,6 +156,7 @@ func (i *Importer) createRequirement(s *story.Story) (int, *req.Response, error)
 		ProductID:  s.ProductID,
 		Title:      s.Title,
 		Pri:        s.Priority,
+		Grade:      1,
 		Spec:       s.Spec,
 		Category:   s.Category,
 		Parent:     s.ParentID,
@@ -164,7 +168,7 @@ func (i *Importer) createRequirement(s *story.Story) (int, *req.Response, error)
 	}
 
 	// 设置模块ID（用户需求必须指定有效的模块ID）
-	if i.config.GetDefaultModule() > 0 {
+	if i.config.GetDefaultModule() >= 0 {
 		req.Module = i.config.GetDefaultModule()
 	} else {
 		return 0, nil, fmt.Errorf("创建用户需求需要有效的模块ID，请在config.yaml中配置defaultModule参数")
@@ -195,6 +199,7 @@ func (i *Importer) createStory(s *story.Story) (int, *req.Response, error) {
 		ProductID:  s.ProductID,
 		Title:      s.Title,
 		Pri:        s.Priority,
+		Grade:      1,
 		Spec:       s.Spec,
 		Category:   s.Category,
 		Parent:     s.ParentID,
@@ -232,26 +237,100 @@ func (i *Importer) wrapAPIError(operation string, err error, rsp *req.Response) 
 	return fmt.Errorf("%s失败: %w (HTTP %d: %s)", operation, err, rsp.StatusCode, rsp.String())
 }
 
-// ImportStories 批量导入需求
+// ImportStories 按层级导入需求（Epic → Requirement → Story）
+// 解析 "@行号" 格式的父需求引用，自动替换为实际创建的禅道ID
 func (i *Importer) ImportStories(stories []story.Story) []ImportResult {
 	results := make([]ImportResult, len(stories))
+	// 行号到禅道ID的映射（用于解析 @n 引用）
+	rowIDMap := make(map[int]int)
 
-	i.logger.Info("开始批量导入需求，共 %d 个需求", len(stories))
-
+	// 按层级分组并保持原始顺序
+	var epics, requirements, storiesGroup []int // 存储在stories切片中的索引
 	for idx, s := range stories {
-		i.logger.Info("正在导入第 %d/%d 个需求", idx+1, len(stories))
-		results[idx] = i.ImportStory(&s)
+		switch s.Type {
+		case story.StoryTypeEpic:
+			epics = append(epics, idx)
+		case story.StoryTypeRequirement:
+			requirements = append(requirements, idx)
+		case story.StoryTypeStory:
+			storiesGroup = append(storiesGroup, idx)
+		}
 	}
 
+	i.logger.Info("开始层级导入: %d个业务需求 → %d个用户需求 → %d个研发需求",
+		len(epics), len(requirements), len(storiesGroup))
+
+	// 第一阶段：导入 Epic
+	i.logger.Info("========== 阶段1: 导入业务需求(Epic) ==========")
+	for _, idx := range epics {
+		s := stories[idx]
+		results[idx] = i.ImportStory(&s)
+		if results[idx].Success {
+			rowIDMap[s.RowIndex] = results[idx].StoryID
+		}
+	}
+
+	// 第二阶段：解析 Requirement 的父引用并导入
+	i.logger.Info("========== 阶段2: 导入用户需求(Requirement) ==========")
+	for _, idx := range requirements {
+		s := &stories[idx]
+		i.resolveParentRef(s, rowIDMap)
+		results[idx] = i.ImportStory(s)
+		if results[idx].Success {
+			rowIDMap[s.RowIndex] = results[idx].StoryID
+		}
+	}
+
+	// 第三阶段：解析 Story 的父引用并导入
+	i.logger.Info("========== 阶段3: 导入研发需求(Story) ==========")
+	for _, idx := range storiesGroup {
+		s := &stories[idx]
+		i.resolveParentRef(s, rowIDMap)
+		results[idx] = i.ImportStory(s)
+		if results[idx].Success {
+			rowIDMap[s.RowIndex] = results[idx].StoryID
+		}
+	}
+
+	// 汇总统计
 	successCount := 0
 	for _, result := range results {
 		if result.Success {
 			successCount++
 		}
 	}
-	i.logger.Info("需求导入完成，成功: %d，失败: %d", successCount, len(stories)-successCount)
+	i.logger.Info("层级导入完成，成功: %d，失败: %d", successCount, len(stories)-successCount)
 
 	return results
+}
+
+// resolveParentRef 解析父需求引用，将 "@行号" 格式替换为实际的禅道ID
+func (i *Importer) resolveParentRef(s *story.Story, rowIDMap map[int]int) {
+	if s.ParentRef == "" {
+		return
+	}
+
+	// 检查是否为 "@行号" 格式
+	ref := strings.TrimPrefix(s.ParentRef, "@")
+	if ref == s.ParentRef {
+		// 不是 @ 格式，ParentID 已经在解析时设置
+		return
+	}
+
+	rowNum, err := strconv.Atoi(ref)
+	if err != nil {
+		i.logger.Error("无效的父需求引用格式: %s（行%d），应为 @行号", s.ParentRef, s.RowIndex)
+		return
+	}
+
+	parentID, ok := rowIDMap[rowNum]
+	if !ok {
+		i.logger.Error("父需求引用 @%d 未找到对应的禅道ID（行%d），该行可能导入失败", rowNum, s.RowIndex)
+		return
+	}
+
+	s.ParentID = parentID
+	i.logger.Debug("行%d 父需求引用 @%d 解析为禅道ID: %d", s.RowIndex, rowNum, parentID)
 }
 
 // GenerateReport 生成导入报告

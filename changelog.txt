@@ -1,9 +1,39 @@
 # 禅道需求批量导入删除工具 - 版本说明
 
-## 当前版本：v1.1.0
+## 当前版本：v2.0.0
 
 ### 更新日期
-2026年3月
+2026年5月
+
+---
+
+## v2.0.0 更新内容
+
+### 重大变更（Breaking Changes）
+1. **移除 `-type` 参数** - 不再通过命令行参数区分需求类型，统一采用层级导入模式
+2. **Excel格式变更** - 首列新增"需求类型"列（epic/requirement/story），统一为12列格式
+3. **删除操作变更** - 按产品删除时自动获取所有类型需求（Epic/Requirement/Story），无需指定类型
+
+### 新增功能
+1. **统一层级导入** - 一个Excel中混合填写不同类型需求，自动按 Epic → Requirement → Story 顺序导入
+2. **智能父需求引用** - 支持 `@行号` 格式引用父需求，工具自动解析为实际禅道ID
+3. **导入确认增强** - 导入前显示需求类型分布统计，清晰展示各类型数量
+4. **TypedID机制** - 删除操作支持按类型区分需求ID，确保调用正确的API端点
+
+### 功能改进
+1. **API字段名修正** - 创建需求JSON字段从 `product` 修正为 `productID`，符合禅道v2 API规范
+2. **grade参数支持** - 创建需求时自动传递 `grade` 参数（默认值1）
+3. **删除确认优化** - 按产品删除时明确提示将删除所有类型需求（包括Epic/Requirement/Story）
+4. **代码架构优化** - 统一导入流程，移除单类型导入和层级导入的代码分支
+
+### Bug修复
+1. 修复创建需求API字段名与禅道v2.0接口不匹配的问题
+
+### 升级指南（从v1.x升级）
+- **Excel文件**：在原有11列格式前插入"需求类型"列（第1列），填写 epic/requirement/story
+- **命令行**：移除 `-type` 参数，导入直接使用 `zentao_story_tool.exe -action import`
+- **删除操作**：移除 `-type` 参数，按产品删除自动涵盖所有类型
+- **父需求引用**：原来直接填禅道ID，现在推荐使用 `@行号` 格式自动解析
 
 ---
 
@@ -22,10 +52,6 @@
 ### Bug修复
 1. 修复 `StoryListItem` 结构体 `plan` 和 `estimate` 字段类型解析错误
 2. 修复产品信息获取API响应格式问题
-
-### 系统要求
-- 禅道版本：V21.7.9 及以上（开源版）/ V21.0+（企业版/旗舰版/IPD版）
-- 操作系统：Windows 7/10/11、Linux、macOS
 
 ---
 
@@ -46,15 +72,16 @@
 |------|------|
 | zentao_story_tool.exe | 主程序 |
 | config.yaml | 配置文件（需修改） |
-| requirements.xlsx | Excel导入模板 |
+| requirements.xlsx | Excel导入模板（含需求类型列） |
 | 使用说明.txt | 使用说明书 |
+| changelog.txt | 版本更新日志 |
 
 ---
 
 ## 快速开始
 
 1. 修改 `config.yaml`，填写禅道服务器地址和账号信息
-2. 按模板格式填写 `requirements.xlsx`
-3. 执行 `zentao_story_tool.exe -action import -type story`
+2. 按模板格式填写 `requirements.xlsx`（第1列为需求类型）
+3. 执行 `zentao_story_tool.exe -action import`
 
 详细说明请参阅 `使用说明.txt`

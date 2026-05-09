@@ -203,7 +203,7 @@ func TestDeleter_DeleteStory_Success(t *testing.T) {
 
 	deleter := NewDeleterWithMocks(log, nil, nil, mockStory)
 
-	result := deleter.DeleteStory(42, "story")
+	result := deleter.DeleteStory(42, story.StoryTypeStory)
 
 	if !result.Success {
 		t.Fatal("希望删除成功")
@@ -222,7 +222,7 @@ func TestDeleter_DeleteStory_Failure(t *testing.T) {
 
 	deleter := NewDeleterWithMocks(log, nil, nil, mockStory)
 
-	result := deleter.DeleteStory(999, "story")
+	result := deleter.DeleteStory(999, story.StoryTypeStory)
 
 	if result.Success {
 		t.Fatal("希望删除失败")

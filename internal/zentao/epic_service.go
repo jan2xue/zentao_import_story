@@ -9,10 +9,11 @@ import (
 
 // EpicCreateRequest 创建业务需求的请求体 (API V2.0)
 type EpicCreateRequest struct {
-	ProductID  int      `json:"product"`              // 产品ID (必填)
+	ProductID  int      `json:"productID"`            // 产品ID (必填)
 	Title      string   `json:"title"`                // 标题 (必填)
 	Pri        int      `json:"pri,omitempty"`        // 优先级，默认是3
 	Module     int      `json:"module,omitempty"`     // 所属模块
+	Grade      int      `json:"grade"`                // 需求层级，默认1
 	Parent     int      `json:"parent,omitempty"`     // 父业务需求
 	Estimate   float64  `json:"estimate,omitempty"`   // 预计工时
 	Spec       string   `json:"spec,omitempty"`       // 业务需求描述

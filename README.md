@@ -7,11 +7,11 @@
 
 ## 🚀 核心功能
 
-*   **批量导入**：数秒内导入成百上千条需求。
-*   **批量删除**：支持按需求ID或产品ID批量删除需求，删除前有确认提示。
-*   **产品确认**：导入前显示产品信息并要求用户确认，防止数据导入错误产品。
+*   **层级导入**：支持在一个 Excel 中混合填写不同类型需求，自动按 Epic → Requirement → Story 顺序导入并建立父子层级关系。
+*   **智能引用**：支持 `@行号` 格式引用父需求，无需提前知道禅道 ID，工具自动解析。
+*   **批量删除**：支持按需求ID或产品ID批量删除需求（按产品删除时自动涵盖所有类型），删除前有确认提示。
+*   **产品确认**：导入前显示产品信息和需求类型分布，要求用户确认，防止数据导入错误产品。
 *   **自动分页**：删除功能支持自动分页获取，突破API默认20条限制。
-*   **多类型支持**：支持业务需求(epic)、用户需求(requirement)、研发需求(story)三种类型。
 *   **智能字段映射**：自动将 Excel 列映射到禅道需求字段（标题、优先级、分类等）。
 *   **数据验证**：预检查数据完整性，确保必填字段（标题、产品 ID 等）存在且有效。
 *   **详细报告**：生成包含导入/删除结果、耗时统计和成功率的详尽报告。
@@ -115,41 +115,41 @@ defaultModule: 0                        # 默认模块ID，创建用户需求时
 
 > [!IMPORTANT]
 > `defaultReviewer` 为必填项，禅道 API 创建需求时要求指定评审人。
-> 
+>
 > `defaultModule` 仅在导入用户需求(requirement)时需要，请先在禅道 Web 界面创建模块并获取模块ID。
 
 ## 📖 使用方法
 
 ### 导入需求
 
-通过 `-type` 参数指定导入的需求类型：
+导入采用层级模式，Excel中"需求类型"列决定每行数据的类型，工具自动按 Epic → Requirement → Story 顺序导入并建立父子关系：
 
 ```powershell
-# 导入研发需求（默认）
-./zentao_story_tool.exe -action import -type story
-
-# 导入用户需求
-./zentao_story_tool.exe -action import -type requirement
-
-# 导入业务需求
-./zentao_story_tool.exe -action import -type epic
+# 导入需求
+./zentao_story_tool.exe -action import
 ```
 
 > [!NOTE]
-> 导入前会显示产品信息确认界面，需要用户确认产品ID和名称无误后才会执行导入，防止数据导入错误产品。
+> 导入前会显示产品信息和需求类型分布确认界面，需要用户确认产品ID和名称无误后才会执行导入，防止数据导入错误产品。
+
+### 父需求引用
+
+**父需求引用格式**（Excel第7列"父需求ID"）：
+- `@行号`：引用本 Excel 中第 N 行数据创建后得到的禅道 ID（如 `@1` 引用第 1 行），行号从1开始（不包含标题行）
+- 纯数字：直接使用禅道系统中已存在的需求 ID
 
 ### 删除需求
 
 ```powershell
-# 按需求ID删除（支持多个ID，逗号分隔）
-./zentao_story_tool.exe -action delete -type story -ids 123,456,789
+# 按需求ID删除（支持多个ID，逗号分隔，默认按story类型）
+./zentao_story_tool.exe -action delete -ids 123,456,789
 
-# 按产品ID删除该产品下所有需求（支持自动分页，突破20条限制）
-./zentao_story_tool.exe -action delete -type story -product 78
+# 按产品ID删除该产品下所有需求（自动涵盖Epic/Requirement/Story所有类型，支持自动分页）
+./zentao_story_tool.exe -action delete -product 78
 ```
 
 > [!NOTE]
-> 按产品删除时，工具会自动分页获取所有需求，不受API默认20条分页限制。
+> 按产品删除时，工具会自动获取该产品下所有类型的需求（Epic、Requirement、Story），不受API默认20条分页限制。
 
 > [!WARNING]
 > 删除操作会显示确认提示，需要输入 `yes` 或 `y` 确认后才会执行。此操作不可撤销！
@@ -162,8 +162,8 @@ defaultModule: 0                        # 默认模块ID，创建用户需求时
 # 使用自定义配置文件
 ./zentao_story_tool.exe -config custom-config.yaml -excel data.xlsx
 
-# 指定产品ID和Excel文件
-./zentao_story_tool.exe -action import -type story -product 78 -excel requirements.xlsx
+# 指定Excel文件
+./zentao_story_tool.exe -action import -excel requirements.xlsx
 ```
 
 ### 命令行参数
@@ -173,35 +173,45 @@ defaultModule: 0                        # 默认模块ID，创建用户需求时
 | `-config` | 配置文件路径 | `config.yaml` |
 | `-excel` | Excel 文件路径 | 配置文件中的值 |
 | `-action` | 操作类型: `import`(导入) 或 `delete`(删除) | `import` |
-| `-type` | 需求类型: `story`(研发需求)、`requirement`(用户需求)、`epic`(业务需求) | `story` |
 | `-ids` | 需求ID列表（删除时使用，逗号分隔） | - |
-| `-product` | 产品ID | 配置文件中的值 |
+| `-product` | 产品ID（删除时使用） | - |
 
 ## 📊 Excel 格式说明
 
-### 列格式（第一行为标题行）
+### 列格式（第一行为标题行，共12列）
 
 | 列序号 | 列名 | 必填 | 说明 |
 |--------|------|------|------|
-| 1 | 标题 | 是 | 需求的标题 |
-| 2 | 产品ID | 是 | 数字，禅道中的产品ID |
-| 3 | 优先级 | 否 | 1-4的数字，默认3 |
-| 4 | 分类 | 是 | feature/interface/performance/safe/experience/improve/other |
-| 5 | 需求描述 | 是 | 详细描述 |
-| 6 | 父需求ID | 否 | 数字，父需求的ID |
-| 7 | 来源 | 否 | customer/user/po/market/service/operation/support/competitor/partner/dev/tester/bug/forum/other |
-| 8 | 来源备注 | 否 | 字符串 |
-| 9 | 预计工时 | 否 | 数字 |
-| 10 | 关键词 | 否 | 字符串 |
-| 11 | 验收标准 | 否 | 字符串 |
+| 1 | 需求类型 | 是 | `epic`/`requirement`/`story` |
+| 2 | 标题 | 是 | 需求的标题 |
+| 3 | 产品ID | 是 | 数字，禅道中的产品ID |
+| 4 | 优先级 | 否 | 1-4的数字，默认3 |
+| 5 | 分类 | 是 | feature/interface/performance/safe/experience/improve/other |
+| 6 | 需求描述 | 是 | 详细描述 |
+| 7 | 父需求ID | 否 | `@行号`引用或纯数字ID |
+| 8 | 来源 | 否 | customer/user/po/market/service/operation/support/competitor/partner/dev/tester/bug/forum/other |
+| 9 | 来源备注 | 否 | 字符串 |
+| 10 | 预计工时 | 否 | 数字 |
+| 11 | 关键词 | 否 | 字符串 |
+| 12 | 验收标准 | 否 | 字符串 |
 
 ### 示例数据
 
-| 标题 | 产品ID | 优先级 | 分类 | 需求描述 | 父需求ID | 来源 | 来源备注 | 预计工时 | 关键词 | 验收标准 |
-|------|--------|--------|------|----------|----------|------|----------|----------|--------|----------|
-| 智能座舱系统 | 1 | 1 | feature | 开发新一代智能座舱系统，集成多媒体、导航、语音控制等功能 | 0 | market | 市场调研 | 100 | 智能座舱,多媒体 | 功能完整，性能稳定 |
-| 语音控制功能 | 1 | 2 | feature | 用户可以通过语音控制车内设备 | 1 | user | 用户反馈 | 20 | 语音,控制 | 识别率95%以上 |
-| 实现语音识别模块 | 1 | 3 | feature | 开发语音识别核心模块，支持中英文识别 | 2 | dev | 技术方案 | 40 | 语音识别,AI | 单元测试覆盖率80% |
+| 需求类型 | 标题 | 产品ID | 优先级 | 分类 | 需求描述 | 父需求ID | 来源 | 来源备注 | 预计工时 | 关键词 | 验收标准 |
+|----------|------|--------|--------|------|----------|----------|------|----------|----------|--------|----------|
+| epic | 智能座舱系统 | 78 | 1 | feature | 开发新一代智能座舱系统，集成多媒体、导航、语音控制等功能 | | market | 市场调研 | 100 | 智能座舱,多媒体 | 功能完整，性能稳定 |
+| requirement | 语音控制功能 | 78 | 2 | feature | 用户可以通过语音控制车内设备 | @1 | user | 用户反馈 | 20 | 语音,控制 | 识别率95%以上 |
+| story | 实现语音识别模块 | 78 | 3 | feature | 开发语音识别核心模块，支持中英文识别 | @2 | dev | 技术方案 | 40 | 语音识别,AI | 单元测试覆盖率80% |
+
+> 说明：`@1` 引用第1行（智能座舱系统）创建后的禅道ID，`@2` 引用第2行（语音控制功能）创建后的禅道ID。
+
+### 需求类型说明
+
+| 类型 | Excel值 | 说明 | 配置要求 |
+|------|---------|------|----------|
+| 业务需求 | `epic` | 高层次的业务需求，通常是产品的大功能模块 | 需要有相应权限 |
+| 用户需求 | `requirement` | 从用户角度出发的需求描述 | **需配置 `defaultModule`** |
+| 研发需求 | `story` | 具体的研发实现需求，可直接分配给开发团队 | **需配置 `defaultReviewer`** |
 
 ### 分类选项
 
@@ -233,14 +243,6 @@ defaultModule: 0                        # 默认模块ID，创建用户需求时
 | `bug` | Bug |
 | `forum` | 论坛 |
 | `other` | 其他 |
-
-## 📝 需求类型说明
-
-| 类型 | 参数值 | 说明 | 配置要求 |
-|------|--------|------|----------|
-| 业务需求 | `epic` | 高层次的业务需求，通常是产品的大功能模块 | 需要有相应权限 |
-| 用户需求 | `requirement` | 从用户角度出发的需求描述 | **需配置 `defaultModule`** |
-| 研发需求 | `story` | 具体的研发实现需求，可直接分配给开发团队 | **需配置 `defaultReviewer`** |
 
 > [!IMPORTANT]
 > - 研发需求(story)需要在 `config.yaml` 中配置 `defaultReviewer`（评审人用户名）

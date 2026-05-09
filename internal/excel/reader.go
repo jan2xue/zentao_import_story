@@ -29,28 +29,27 @@ func (r *Reader) Close() error {
 	return r.file.Close()
 }
 
-// ReadStories 读取所有需求数据
-func (r *Reader) ReadStories(defaultPriority int, storyType string) ([]story.Story, error) {
-	// 获取第一个工作表
+// ReadStories 读取层级需求数据
+// Excel列定义: 需求类型 | 标题 | 产品ID | 优先级 | 分类 | 需求描述 | 父需求ID | 来源 | 来源备注 | 预计工时 | 关键词 | 验收标准
+// 父需求ID支持格式: "@n"引用第n行数据的禅道ID，或纯数字作为实际禅道ID
+func (r *Reader) ReadStories(defaultPriority int) ([]story.Story, error) {
 	sheets := r.file.GetSheetList()
 	if len(sheets) == 0 {
 		return nil, fmt.Errorf("Excel文件中没有工作表")
 	}
 
-	// 读取所有行
 	rows, err := r.file.GetRows(sheets[0])
 	if err != nil {
 		return nil, fmt.Errorf("读取工作表失败: %w", err)
 	}
 
-	if len(rows) < 2 { // 至少需要标题行和一行数据
+	if len(rows) < 2 {
 		return nil, fmt.Errorf("Excel文件中没有数据")
 	}
 
-	// 跳过标题行，处理数据行
 	var stories []story.Story
 	for i, row := range rows[1:] {
-		s, err := r.parseRow(row, defaultPriority, storyType)
+		s, err := r.parseRow(row, defaultPriority, i+1)
 		if err != nil {
 			return nil, fmt.Errorf("第%d行数据解析失败: %w", i+2, err)
 		}
@@ -60,16 +59,16 @@ func (r *Reader) ReadStories(defaultPriority int, storyType string) ([]story.Sto
 	return stories, nil
 }
 
-// parseRow 解析Excel行数据为需求结构
-// Excel列定义: 标题 | 产品ID | 优先级 | 分类 | 需求描述 | 父需求ID | 来源 | 来源备注 | 预计工时 | 关键词 | 验收标准
-func (r *Reader) parseRow(row []string, defaultPriority int, storyTypeStr string) (story.Story, error) {
-	if len(row) < 4 { // 检查必填字段: 标题、产品ID、优先级、分类、描述
+// parseRow 解析Excel行数据
+// Excel列定义: 需求类型 | 标题 | 产品ID | 优先级 | 分类 | 需求描述 | 父需求ID | 来源 | 来源备注 | 预计工时 | 关键词 | 验收标准
+func (r *Reader) parseRow(row []string, defaultPriority int, rowIndex int) (story.Story, error) {
+	if len(row) < 5 {
 		return story.Story{}, fmt.Errorf("行数据不完整，缺少必填字段，当前列数: %d", len(row))
 	}
 
-	// 解析需求类型
-	storyType := story.StoryTypeStory // 默认为研发需求
-	switch strings.ToLower(storyTypeStr) {
+	// 解析需求类型 (第1列)
+	storyType := story.StoryTypeStory
+	switch strings.ToLower(strings.TrimSpace(row[0])) {
 	case "epic":
 		storyType = story.StoryTypeEpic
 	case "requirement":
@@ -77,74 +76,89 @@ func (r *Reader) parseRow(row []string, defaultPriority int, storyTypeStr string
 	case "story":
 		storyType = story.StoryTypeStory
 	default:
-		return story.Story{}, fmt.Errorf("无效的需求类型: %s，支持: epic/requirement/story", storyTypeStr)
+		return story.Story{}, fmt.Errorf("无效的需求类型: %s，支持: epic/requirement/story", strings.TrimSpace(row[0]))
 	}
 
-	// 解析产品ID (第2列)
-	productID, err := strconv.Atoi(strings.TrimSpace(row[1]))
+	// 解析标题 (第2列)
+	title := strings.TrimSpace(row[1])
+	if title == "" {
+		return story.Story{}, fmt.Errorf("标题不能为空")
+	}
+
+	// 解析产品ID (第3列)
+	productID, err := strconv.Atoi(strings.TrimSpace(row[2]))
 	if err != nil {
 		return story.Story{}, fmt.Errorf("产品ID必须是数字: %w", err)
 	}
 
-	// 解析优先级 (第3列)
+	// 解析优先级 (第4列)
 	priority := defaultPriority
-	if len(row) > 2 && strings.TrimSpace(row[2]) != "" {
-		p, err := strconv.Atoi(strings.TrimSpace(row[2]))
+	if len(row) > 3 && strings.TrimSpace(row[3]) != "" {
+		p, err := strconv.Atoi(strings.TrimSpace(row[3]))
 		if err != nil || p < 1 || p > 4 {
 			return story.Story{}, fmt.Errorf("优先级必须是1-4之间的数字")
 		}
 		priority = p
 	}
 
-	// 创建需求对象
-	s := story.Story{
-		Type:      storyType,
-		Title:     strings.TrimSpace(row[0]),
-		ProductID: productID,
-		Priority:  priority,
-		Category:  strings.TrimSpace(row[3]),
-	}
-
-	// 检查必填字段
-	if s.Title == "" {
-		return story.Story{}, fmt.Errorf("标题不能为空")
-	}
-	if s.Category == "" {
+	// 解析分类 (第5列)
+	category := strings.TrimSpace(row[4])
+	if category == "" {
 		return story.Story{}, fmt.Errorf("分类不能为空")
 	}
-	if len(row) > 4 {
-		s.Spec = strings.TrimSpace(row[4])
+
+	s := story.Story{
+		Type:      storyType,
+		Title:     title,
+		ProductID: productID,
+		Priority:  priority,
+		Category:  category,
+		RowIndex:  rowIndex,
+	}
+
+	// 解析需求描述 (第6列)
+	if len(row) > 5 {
+		s.Spec = strings.TrimSpace(row[5])
 	}
 	if s.Spec == "" {
 		return story.Story{}, fmt.Errorf("需求描述不能为空")
 	}
 
-	// 设置可选字段
-	if len(row) > 5 {
-		if parentID := strings.TrimSpace(row[5]); parentID != "" {
-			if id, err := strconv.Atoi(parentID); err == nil {
+	// 解析父需求ID (第7列) - 支持 "@n" 引用格式
+	if len(row) > 6 {
+		if parentRef := strings.TrimSpace(row[6]); parentRef != "" {
+			s.ParentRef = parentRef
+			// 如果是纯数字，直接解析为禅道ID
+			if id, err := strconv.Atoi(parentRef); err == nil {
 				s.ParentID = id
 			}
+			// "@n" 格式将在导入时解析，ParentID 暂为0
 		}
 	}
-	if len(row) > 6 {
-		s.Source = strings.TrimSpace(row[6])
-	}
+
+	// 解析来源 (第8列)
 	if len(row) > 7 {
-		s.SourceNote = strings.TrimSpace(row[7])
+		s.Source = strings.TrimSpace(row[7])
 	}
+	// 解析来源备注 (第9列)
 	if len(row) > 8 {
-		if estimate := strings.TrimSpace(row[8]); estimate != "" {
+		s.SourceNote = strings.TrimSpace(row[8])
+	}
+	// 解析预计工时 (第10列)
+	if len(row) > 9 {
+		if estimate := strings.TrimSpace(row[9]); estimate != "" {
 			if est, err := strconv.ParseFloat(estimate, 64); err == nil {
 				s.Estimate = est
 			}
 		}
 	}
-	if len(row) > 9 {
-		s.Keywords = strings.TrimSpace(row[9])
-	}
+	// 解析关键词 (第11列)
 	if len(row) > 10 {
-		s.Verify = strings.TrimSpace(row[10])
+		s.Keywords = strings.TrimSpace(row[10])
+	}
+	// 解析验收标准 (第12列)
+	if len(row) > 11 {
+		s.Verify = strings.TrimSpace(row[11])
 	}
 
 	return s, nil

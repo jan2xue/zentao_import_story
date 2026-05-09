@@ -7,7 +7,14 @@ import (
 
 	"github.com/imroc/req/v3"
 	"github.com/jan2xue/zentao_import_story/internal/logger"
+	"github.com/jan2xue/zentao_import_story/pkg/story"
 )
+
+// TypedID 带类型的需求ID
+type TypedID struct {
+	ID   int
+	Type story.StoryType
+}
 
 // DeleteResult 表示删除结果
 type DeleteResult struct {
@@ -48,8 +55,8 @@ func NewDeleterWithMocks(log *logger.Logger, epic EpicCreator, req RequirementCr
 	}
 }
 
-// DeleteStory 删除单个需求
-func (d *Deleter) DeleteStory(storyID int, storyType string) DeleteResult {
+// DeleteStory 删除单个需求（按ID删除，需指定类型以选择正确的API端点）
+func (d *Deleter) DeleteStory(storyID int, storyType story.StoryType) DeleteResult {
 	start := time.Now()
 	result := DeleteResult{
 		StoryID: storyID,
@@ -60,13 +67,12 @@ func (d *Deleter) DeleteStory(storyID int, storyType string) DeleteResult {
 	var rsp *req.Response
 	var err error
 
-	// 根据需求类型选择不同的API
 	switch storyType {
-	case "epic":
+	case story.StoryTypeEpic:
 		_, rsp, err = d.epicDeleter.DeleteByID(storyID)
-	case "requirement":
+	case story.StoryTypeRequirement:
 		_, rsp, err = d.reqDeleter.DeleteByID(storyID)
-	case "story":
+	case story.StoryTypeStory:
 		_, rsp, err = d.storyDeleter.DeleteByID(storyID)
 	default:
 		_, rsp, err = d.storyDeleter.DeleteByID(storyID)
@@ -75,7 +81,7 @@ func (d *Deleter) DeleteStory(storyID int, storyType string) DeleteResult {
 	if err != nil {
 		d.logger.ErrorWithDetail("需求删除失败", err, map[string]interface{}{
 			"需求ID":    storyID,
-			"需求类型":   storyType,
+			"需求类型":   string(storyType),
 			"HTTP状态码": d.getStatusCode(rsp),
 			"响应内容":   d.getResponseBody(rsp),
 		})
@@ -85,7 +91,7 @@ func (d *Deleter) DeleteStory(storyID int, storyType string) DeleteResult {
 	} else if rsp != nil && rsp.StatusCode >= 400 {
 		d.logger.ErrorWithDetail("需求删除失败（HTTP错误）", fmt.Errorf("HTTP状态码: %d", rsp.StatusCode), map[string]interface{}{
 			"需求ID":    storyID,
-			"需求类型":   storyType,
+			"需求类型":   string(storyType),
 			"HTTP状态码": rsp.StatusCode,
 			"响应内容":   d.getResponseBody(rsp),
 		})
@@ -102,14 +108,14 @@ func (d *Deleter) DeleteStory(storyID int, storyType string) DeleteResult {
 }
 
 // DeleteStories 批量删除需求
-func (d *Deleter) DeleteStories(storyIDs []int, storyType string) []DeleteResult {
-	results := make([]DeleteResult, len(storyIDs))
+func (d *Deleter) DeleteStories(ids []TypedID) []DeleteResult {
+	results := make([]DeleteResult, len(ids))
 
-	d.logger.Info("开始批量删除需求，共 %d 个需求", len(storyIDs))
+	d.logger.Info("开始批量删除需求，共 %d 个需求", len(ids))
 
-	for idx, storyID := range storyIDs {
-		d.logger.Info("正在删除第 %d/%d 个需求", idx+1, len(storyIDs))
-		results[idx] = d.DeleteStory(storyID, storyType)
+	for idx, id := range ids {
+		d.logger.Info("正在删除第 %d/%d 个需求", idx+1, len(ids))
+		results[idx] = d.DeleteStory(id.ID, id.Type)
 	}
 
 	successCount := 0
@@ -118,7 +124,7 @@ func (d *Deleter) DeleteStories(storyIDs []int, storyType string) []DeleteResult
 			successCount++
 		}
 	}
-	d.logger.Info("需求删除完成，成功: %d，失败: %d", successCount, len(storyIDs)-successCount)
+	d.logger.Info("需求删除完成，成功: %d，失败: %d", successCount, len(ids)-successCount)
 
 	return results
 }

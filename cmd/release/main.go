@@ -15,7 +15,7 @@ import (
 
 const (
 	projectName = "zentao_import_story"
-	defaultVersion = "1.1.0"
+	defaultVersion = "2.0.0"
 )
 
 func main() {
