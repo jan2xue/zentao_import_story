@@ -9,7 +9,7 @@ import (
 
 // StoryCreateRequest 创建研发需求的请求体 (API V2.0)
 type StoryCreateRequest struct {
-	ProductID  int      `json:"productID"`            // 产品ID (必填)
+	ProductID  int      `json:"product"`              // 产品ID (必填)
 	Title      string   `json:"title"`                // 标题 (必填)
 	Pri        int      `json:"pri,omitempty"`        // 优先级，默认是3
 	Module     int      `json:"module,omitempty"`     // 所属模块
@@ -18,6 +18,8 @@ type StoryCreateRequest struct {
 	Spec       string   `json:"spec,omitempty"`       // 需求描述
 	Category   string   `json:"category,omitempty"`   // 类别
 	Source     string   `json:"source,omitempty"`     // 来源
+	SourceNote string   `json:"sourceNote,omitempty"` // 来源备注
+	Keywords   string   `json:"keywords,omitempty"`   // 关键词
 	Verify     string   `json:"verify,omitempty"`     // 验收标准
 	AssignedTo string   `json:"assignedTo,omitempty"` // 指派给
 	Reviewer   []string `json:"reviewer,omitempty"`   // 评审人

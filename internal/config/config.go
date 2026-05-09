@@ -23,3 +23,9 @@ func NewDefaultConfig() *Config {
 		DefaultPriority: 3, // 默认优先级为3
 	}
 }
+
+// GetDefaultModule 实现 zentao.ConfigProvider 接口
+func (c *Config) GetDefaultModule() int { return c.DefaultModule }
+
+// GetDefaultReviewer 实现 zentao.ConfigProvider 接口
+func (c *Config) GetDefaultReviewer() string { return c.DefaultReviewer }

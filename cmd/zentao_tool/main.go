@@ -18,6 +18,18 @@ import (
 	"github.com/jan2xue/zentao_import_story/internal/zentao"
 )
 
+// envVarOverrides maps environment variable names to config field setters.
+// Environment variables take precedence over config.yaml values.
+var envVarOverrides = []struct {
+	envKey string
+	apply  func(cfg *config.Config, val string)
+}{
+	{"ZENTAO_URL", func(cfg *config.Config, val string) { cfg.ZentaoURL = val }},
+	{"ZENTAO_USERNAME", func(cfg *config.Config, val string) { cfg.ZentaoUsername = val }},
+	{"ZENTAO_PASSWORD", func(cfg *config.Config, val string) { cfg.ZentaoPassword = val }},
+	{"ZENTAO_REVIEWER", func(cfg *config.Config, val string) { cfg.DefaultReviewer = val }},
+}
+
 func main() {
 	// 初始化日志记录器
 	log, err := logger.NewLogger()
@@ -112,9 +124,10 @@ func handleImport(cfg *config.Config, log *logger.Logger, storyType string) {
 	}
 
 	// 显示产品确认信息
-	fmt.Printf("\n" + strings.Repeat("=", 60) + "\n")
+	separator := strings.Repeat("=", 60)
+	fmt.Printf("\n%s\n", separator)
 	fmt.Printf("                    导入确认\n")
-	fmt.Printf(strings.Repeat("=", 60) + "\n\n")
+	fmt.Printf("%s\n\n", separator)
 	
 	fmt.Printf("需求类型: %s\n", getStoryTypeName(storyType))
 	fmt.Printf("需求数量: %d 条\n\n", len(stories))
@@ -137,7 +150,7 @@ func handleImport(cfg *config.Config, log *logger.Logger, storyType string) {
 		fmt.Printf("%-10d %-40s %-10d\n", productID, productName, productCount[productID])
 	}
 	
-	fmt.Printf("\n" + strings.Repeat("=", 60) + "\n")
+	fmt.Printf("\n%s\n", separator)
 	fmt.Printf("\n⚠️  重要提示：请仔细核对上述产品信息！\n")
 	fmt.Printf("   错误的产品ID会导致数据被导入到错误的产品下。\n")
 	fmt.Printf("\n是否确认导入? (yes/no): ")
@@ -167,11 +180,15 @@ func handleImport(cfg *config.Config, log *logger.Logger, storyType string) {
 
 	log.Info("日志文件已保存至: %s", log.GetLogFilePath())
 
-	// 如果有失败的导入，使用非零状态码退出
+	// 如果有失败的导入，遍历全部后再退出（避免第一个失败就中断日志输出）
+	hasFailure := false
 	for _, result := range results {
 		if !result.Success {
-			os.Exit(1)
+			hasFailure = true
 		}
+	}
+	if hasFailure {
+		os.Exit(1)
 	}
 }
 
@@ -192,10 +209,11 @@ func getStoryTypeName(storyType string) string {
 // handleDelete 处理删除操作
 func handleDelete(cfg *config.Config, log *logger.Logger, storyType string, storyIDsStr string, productID int) {
 	var storyIDs []int
+	useProductMode := false
 
 	// 解析需求ID列表
 	if storyIDsStr != "" {
-		// 从命令行参数解析ID列表
+		// 从命令行参数解析ID列表（纯本地操作，不会触发API）
 		idStrs := strings.Split(storyIDsStr, ",")
 		for _, idStr := range idStrs {
 			idStr = strings.TrimSpace(idStr)
@@ -209,20 +227,21 @@ func handleDelete(cfg *config.Config, log *logger.Logger, storyType string, stor
 			storyIDs = append(storyIDs, id)
 		}
 	} else if productID > 0 {
-		// 从产品ID获取所有需求ID
-		storyIDs = fetchStoryIDsFromProduct(cfg, log, productID, storyType)
-		if len(storyIDs) == 0 {
-			log.Info("产品 %d 下没有找到任何需求", productID)
-			return
-		}
+		// 产品删除模式：先确认，确认后再查询
+		useProductMode = true
 	} else {
 		log.Fatal("删除操作需要指定需求ID列表 (-ids 参数) 或产品ID (-product 参数)")
 	}
 
-	// 显示确认提示
-	fmt.Printf("\n⚠️  警告: 即将删除 %d 个需求\n", len(storyIDs))
-	fmt.Printf("需求类型: %s\n", storyType)
-	fmt.Printf("需求ID列表: %v\n", storyIDs)
+	// 显示确认提示（对于产品模式，此时尚未调用任何API）
+	if useProductMode {
+		fmt.Printf("\n⚠️  警告: 即将删除产品 %d 下的所有%s\n", productID, getStoryTypeName(storyType))
+		fmt.Printf("   (系统将在确认后查询实际需求数量)\n")
+	} else {
+		fmt.Printf("\n⚠️  警告: 即将删除 %d 个需求\n", len(storyIDs))
+		fmt.Printf("需求类型: %s\n", storyType)
+		fmt.Printf("需求ID列表: %v\n", storyIDs)
+	}
 	fmt.Printf("\n此操作不可撤销，是否继续? (yes/no): ")
 
 	reader := bufio.NewReader(os.Stdin)
@@ -237,10 +256,20 @@ func handleDelete(cfg *config.Config, log *logger.Logger, storyType string, stor
 		return
 	}
 
-	// 创建禅道客户端
+	// 创建禅道客户端（确认后才创建，避免无谓的API调用）
 	client, err := zentao.NewClient(cfg)
 	if err != nil {
 		log.Fatal("创建禅道客户端失败: %v", err)
+	}
+
+	// 产品模式：确认后查询实际需求ID
+	if useProductMode {
+		storyIDs = fetchStoryIDsByProduct(client, log, productID, storyType)
+		if len(storyIDs) == 0 {
+			log.Info("产品 %d 下没有找到任何 %s，无需删除", productID, getStoryTypeName(storyType))
+			return
+		}
+		log.Info("产品 %d 下共发现 %d 个%s，开始删除", productID, len(storyIDs), getStoryTypeName(storyType))
 	}
 
 	// 创建删除器
@@ -255,22 +284,20 @@ func handleDelete(cfg *config.Config, log *logger.Logger, storyType string, stor
 
 	log.Info("日志文件已保存至: %s", log.GetLogFilePath())
 
-	// 如果有失败的删除，使用非零状态码退出
+	// 如果有失败的删除，记录但遍历全部后再退出
+	hasFailure := false
 	for _, result := range results {
 		if !result.Success {
-			os.Exit(1)
+			hasFailure = true
 		}
+	}
+	if hasFailure {
+		os.Exit(1)
 	}
 }
 
-// fetchStoryIDsFromProduct 从产品获取所有需求ID
-func fetchStoryIDsFromProduct(cfg *config.Config, log *logger.Logger, productID int, storyType string) []int {
-	// 创建禅道客户端
-	client, err := zentao.NewClient(cfg)
-	if err != nil {
-		log.Fatal("创建禅道客户端失败: %v", err)
-	}
-
+// fetchStoryIDsByProduct 从产品获取所有需求ID（使用已有client）
+func fetchStoryIDsByProduct(client *zentao.Client, log *logger.Logger, productID int, storyType string) []int {
 	var storyIDs []int
 
 	switch storyType {
@@ -279,7 +306,6 @@ func fetchStoryIDsFromProduct(cfg *config.Config, log *logger.Logger, productID 
 		if err != nil {
 			log.Fatal("获取产品需求列表失败: %v", err)
 		}
-		log.Info("产品 %d 下共有 %d 个研发需求", productID, len(stories))
 		for _, s := range stories {
 			storyIDs = append(storyIDs, s.ID)
 		}
@@ -288,7 +314,6 @@ func fetchStoryIDsFromProduct(cfg *config.Config, log *logger.Logger, productID 
 		if err != nil {
 			log.Fatal("获取产品用户需求列表失败: %v", err)
 		}
-		log.Info("产品 %d 下共有 %d 个用户需求", productID, len(requirements))
 		for _, r := range requirements {
 			storyIDs = append(storyIDs, r.ID)
 		}
@@ -297,7 +322,6 @@ func fetchStoryIDsFromProduct(cfg *config.Config, log *logger.Logger, productID 
 		if err != nil {
 			log.Fatal("获取产品业务需求列表失败: %v", err)
 		}
-		log.Info("产品 %d 下共有 %d 个业务需求", productID, len(epics))
 		for _, e := range epics {
 			storyIDs = append(storyIDs, e.ID)
 		}
@@ -306,7 +330,7 @@ func fetchStoryIDsFromProduct(cfg *config.Config, log *logger.Logger, productID 
 	return storyIDs
 }
 
-// loadConfig 从YAML文件加载配置
+// loadConfig 从YAML文件加载配置，支持环境变量覆盖敏感字段
 func loadConfig(configFile string) (*config.Config, error) {
 	// 首先创建默认配置
 	cfg := config.NewDefaultConfig()
@@ -320,6 +344,13 @@ func loadConfig(configFile string) (*config.Config, error) {
 	// 解析YAML
 	if err := yaml.Unmarshal(data, cfg); err != nil {
 		return nil, fmt.Errorf("解析配置文件失败: %w", err)
+	}
+
+	// 环境变量覆盖（优先级高于YAML文件）
+	for _, ov := range envVarOverrides {
+		if val, ok := os.LookupEnv(ov.envKey); ok && val != "" {
+			ov.apply(cfg, val)
+		}
 	}
 
 	return cfg, nil

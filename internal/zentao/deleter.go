@@ -20,15 +20,31 @@ type DeleteResult struct {
 
 // Deleter 处理需求删除操作
 type Deleter struct {
-	client *Client
-	logger *logger.Logger
+	client       *Client
+	logger       *logger.Logger
+	epicDeleter  EpicCreator
+	reqDeleter   RequirementCreator
+	storyDeleter StoryCreator
 }
 
 // NewDeleter 创建新的删除器
 func NewDeleter(client *Client, log *logger.Logger) *Deleter {
 	return &Deleter{
-		client: client,
-		logger: log,
+		client:       client,
+		logger:       log,
+		epicDeleter:  client.Epic,
+		reqDeleter:   client.Requirement,
+		storyDeleter: client.Story,
+	}
+}
+
+// NewDeleterWithMocks 创建删除器（用于测试）
+func NewDeleterWithMocks(log *logger.Logger, epic EpicCreator, req RequirementCreator, story StoryCreator) *Deleter {
+	return &Deleter{
+		logger:       log,
+		epicDeleter:  epic,
+		reqDeleter:   req,
+		storyDeleter: story,
 	}
 }
 
@@ -47,13 +63,13 @@ func (d *Deleter) DeleteStory(storyID int, storyType string) DeleteResult {
 	// 根据需求类型选择不同的API
 	switch storyType {
 	case "epic":
-		_, rsp, err = d.client.Epic.DeleteByID(storyID)
+		_, rsp, err = d.epicDeleter.DeleteByID(storyID)
 	case "requirement":
-		_, rsp, err = d.client.Requirement.DeleteByID(storyID)
+		_, rsp, err = d.reqDeleter.DeleteByID(storyID)
 	case "story":
-		_, rsp, err = d.client.Story.DeleteByID(storyID)
+		_, rsp, err = d.storyDeleter.DeleteByID(storyID)
 	default:
-		_, rsp, err = d.client.Story.DeleteByID(storyID)
+		_, rsp, err = d.storyDeleter.DeleteByID(storyID)
 	}
 
 	if err != nil {

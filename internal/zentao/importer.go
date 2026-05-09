@@ -23,15 +23,34 @@ type ImportResult struct {
 
 // Importer 处理需求导入到禅道
 type Importer struct {
-	client *Client
-	logger *logger.Logger
+	client        *Client
+	logger        *logger.Logger
+	epicCreator   EpicCreator
+	reqCreator    RequirementCreator
+	storyCreator  StoryCreator
+	config        ConfigProvider
 }
 
 // NewImporter 创建新的导入器
 func NewImporter(client *Client, log *logger.Logger) *Importer {
 	return &Importer{
-		client: client,
-		logger: log,
+		client:       client,
+		logger:       log,
+		epicCreator:  client.Epic,
+		reqCreator:   client.Requirement,
+		storyCreator: client.Story,
+		config:       client.config,
+	}
+}
+
+// NewImporterWithMocks 创建导入器（用于测试，直接注入mock实现）
+func NewImporterWithMocks(log *logger.Logger, epic EpicCreator, req RequirementCreator, story StoryCreator, cfg ConfigProvider) *Importer {
+	return &Importer{
+		logger:       log,
+		epicCreator:  epic,
+		reqCreator:   req,
+		storyCreator: story,
+		config:       cfg,
 	}
 }
 
@@ -101,20 +120,22 @@ func (i *Importer) getResponseBody(rsp *req.Response) string {
 // createEpic 创建业务需求
 func (i *Importer) createEpic(s *story.Story) (int, *req.Response, error) {
 	req := EpicCreateRequest{
-		ProductID: s.ProductID,
-		Title:     s.Title,
-		Pri:       s.Priority,
-		Spec:      s.Spec,
-		Category:  s.Category,
-		Parent:    s.ParentID,
-		Source:    s.Source,
-		Verify:    s.Verify,
-		Estimate:  s.Estimate,
+		ProductID:  s.ProductID,
+		Title:      s.Title,
+		Pri:        s.Priority,
+		Spec:       s.Spec,
+		Category:   s.Category,
+		Parent:     s.ParentID,
+		Source:     s.Source,
+		SourceNote: s.SourceNote,
+		Keywords:   s.Keywords,
+		Verify:     s.Verify,
+		Estimate:   s.Estimate,
 	}
 
 	i.logger.Debug("创建业务请求 - 产品ID: %d, 标题: %s", s.ProductID, s.Title)
 
-	resp, rsp, err := i.client.Epic.Create(req)
+	resp, rsp, err := i.epicCreator.Create(req)
 	if err != nil {
 		return 0, rsp, i.wrapAPIError("创建业务需求", err, rsp)
 	}
@@ -129,32 +150,34 @@ func (i *Importer) createEpic(s *story.Story) (int, *req.Response, error) {
 // createRequirement 创建用户需求
 func (i *Importer) createRequirement(s *story.Story) (int, *req.Response, error) {
 	req := RequirementCreateRequest{
-		ProductID: s.ProductID,
-		Title:     s.Title,
-		Pri:       s.Priority,
-		Spec:      s.Spec,
-		Category:  s.Category,
-		Parent:    s.ParentID,
-		Source:    s.Source,
-		Verify:    s.Verify,
-		Estimate:  s.Estimate,
+		ProductID:  s.ProductID,
+		Title:      s.Title,
+		Pri:        s.Priority,
+		Spec:       s.Spec,
+		Category:   s.Category,
+		Parent:     s.ParentID,
+		Source:     s.Source,
+		SourceNote: s.SourceNote,
+		Keywords:   s.Keywords,
+		Verify:     s.Verify,
+		Estimate:   s.Estimate,
 	}
 
 	// 设置模块ID（用户需求必须指定有效的模块ID）
-	if i.client.config.DefaultModule >= 0 {
-		req.Module = i.client.config.DefaultModule
+	if i.config.GetDefaultModule() > 0 {
+		req.Module = i.config.GetDefaultModule()
 	} else {
 		return 0, nil, fmt.Errorf("创建用户需求需要有效的模块ID，请在config.yaml中配置defaultModule参数")
 	}
 
 	// 设置评审人（如果配置了默认评审人）
-	if i.client.config.DefaultReviewer != "" {
-		req.Reviewer = []string{i.client.config.DefaultReviewer}
+	if i.config.GetDefaultReviewer() != "" {
+		req.Reviewer = []string{i.config.GetDefaultReviewer()}
 	}
 
 	i.logger.Debug("创建用户需求请求 - 产品ID: %d, 标题: %s, 模块ID: %d", s.ProductID, s.Title, req.Module)
 
-	resp, rsp, err := i.client.Requirement.Create(req)
+	resp, rsp, err := i.reqCreator.Create(req)
 	if err != nil {
 		return 0, rsp, i.wrapAPIError("创建用户需求", err, rsp)
 	}
@@ -169,25 +192,27 @@ func (i *Importer) createRequirement(s *story.Story) (int, *req.Response, error)
 // createStory 创建研发需求
 func (i *Importer) createStory(s *story.Story) (int, *req.Response, error) {
 	req := StoryCreateRequest{
-		ProductID: s.ProductID,
-		Title:     s.Title,
-		Pri:       s.Priority,
-		Spec:      s.Spec,
-		Category:  s.Category,
-		Parent:    s.ParentID,
-		Source:    s.Source,
-		Verify:    s.Verify,
-		Estimate:  s.Estimate,
+		ProductID:  s.ProductID,
+		Title:      s.Title,
+		Pri:        s.Priority,
+		Spec:       s.Spec,
+		Category:   s.Category,
+		Parent:     s.ParentID,
+		Source:     s.Source,
+		SourceNote: s.SourceNote,
+		Keywords:   s.Keywords,
+		Verify:     s.Verify,
+		Estimate:   s.Estimate,
 	}
 
 	// 设置评审人（如果配置了默认评审人）
-	if i.client.config.DefaultReviewer != "" {
-		req.Reviewer = []string{i.client.config.DefaultReviewer}
+	if i.config.GetDefaultReviewer() != "" {
+		req.Reviewer = []string{i.config.GetDefaultReviewer()}
 	}
 
 	i.logger.Debug("创建研发需求请求 - 产品ID: %d, 标题: %s", s.ProductID, s.Title)
 
-	resp, rsp, err := i.client.Story.Create(req)
+	resp, rsp, err := i.storyCreator.Create(req)
 	if err != nil {
 		return 0, rsp, i.wrapAPIError("创建研发需求", err, rsp)
 	}

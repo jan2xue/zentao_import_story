@@ -51,7 +51,7 @@ func NewClient(cfg *config.Config) (*Client, error) {
 		baseURL.Path += apiVersionPath
 	}
 
-	// 创建HTTP客户端
+	// 创建HTTP客户端（不绑定固定token，改用动态注入）
 	httpClient := req.C().SetLogger(nil)
 
 	c := &Client{
@@ -59,6 +59,25 @@ func NewClient(cfg *config.Config) (*Client, error) {
 		config:     cfg,
 		baseURL:    baseURL,
 	}
+
+	// 注册OnBeforeRequest中间件：每次请求动态注入当前token
+	c.httpClient.OnBeforeRequest(func(client *req.Client, req *req.Request) error {
+		req.SetHeader("Token", c.token)
+		return nil
+	})
+
+	// 注册401自动重试：token过期时刷新并重试一次
+	c.httpClient.
+		SetCommonRetryCount(1).
+		SetCommonRetryCondition(func(resp *req.Response, err error) bool {
+			return err == nil && resp != nil && resp.StatusCode == 401
+		}).
+		SetCommonRetryHook(func(resp *req.Response, err error) {
+			token, loginErr := c.login()
+			if loginErr == nil {
+				c.token = token
+			}
+		})
 
 	// 使用 v2.0 API 获取 token
 	token, err := c.login()
@@ -117,6 +136,7 @@ func (c *Client) RequestURL(path string) string {
 }
 
 // R 获取HTTP请求构建器
+// 注意：Token已由OnBeforeRequest中间件自动注入，无需在此设置
 func (c *Client) R() *req.Request {
-	return c.httpClient.R().SetHeader("Token", c.token)
+	return c.httpClient.R()
 }
