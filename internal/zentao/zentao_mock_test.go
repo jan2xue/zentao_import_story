@@ -6,9 +6,9 @@ import (
 
 // mockEpicService 实现 EpicCreator 接口
 type mockEpicService struct {
-	createFn  func(req EpicCreateRequest) (*EpicCreateResponse, *req.Response, error)
-	deleteFn  func(id int) (map[string]interface{}, *req.Response, error)
-	listFn    func(productID int) ([]EpicListItem, error)
+	createFn func(req EpicCreateRequest) (*EpicCreateResponse, *req.Response, error)
+	deleteFn func(id int) (map[string]interface{}, *req.Response, error)
+	listFn   func(productID int) ([]EpicListItem, error)
 }
 
 func (m *mockEpicService) Create(req EpicCreateRequest) (*EpicCreateResponse, *req.Response, error) {
@@ -25,9 +25,9 @@ func (m *mockEpicService) ProductsListAll(productID int) ([]EpicListItem, error)
 
 // mockReqService 实现 RequirementCreator 接口
 type mockReqService struct {
-	createFn  func(req RequirementCreateRequest) (*RequirementCreateResponse, *req.Response, error)
-	deleteFn  func(id int) (map[string]interface{}, *req.Response, error)
-	listFn    func(productID int) ([]RequirementListItem, error)
+	createFn func(req RequirementCreateRequest) (*RequirementCreateResponse, *req.Response, error)
+	deleteFn func(id int) (map[string]interface{}, *req.Response, error)
+	listFn   func(productID int) ([]RequirementListItem, error)
 }
 
 func (m *mockReqService) Create(req RequirementCreateRequest) (*RequirementCreateResponse, *req.Response, error) {
@@ -44,9 +44,9 @@ func (m *mockReqService) ProductsListAll(productID int) ([]RequirementListItem, 
 
 // mockStoryService 实现 StoryCreator 接口
 type mockStoryService struct {
-	createFn  func(req StoryCreateRequest) (*StoryCreateResponse, *req.Response, error)
-	deleteFn  func(id int) (map[string]interface{}, *req.Response, error)
-	listFn    func(productID int) ([]StoryListItem, error)
+	createFn func(req StoryCreateRequest) (*StoryCreateResponse, *req.Response, error)
+	deleteFn func(id int) (map[string]interface{}, *req.Response, error)
+	listFn   func(productID int) ([]StoryListItem, error)
 }
 
 func (m *mockStoryService) Create(req StoryCreateRequest) (*StoryCreateResponse, *req.Response, error) {

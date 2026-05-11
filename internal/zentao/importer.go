@@ -239,6 +239,7 @@ func (i *Importer) wrapAPIError(operation string, err error, rsp *req.Response) 
 
 // ImportStories 按层级导入需求（Epic → Requirement → Story）
 // 解析 "@行号" 格式的父需求引用，自动替换为实际创建的禅道ID
+// Epic/Requirement创建API不返回ID，需通过产品列表查询获取实际ID，确保父子关系正确建立
 func (i *Importer) ImportStories(stories []story.Story) []ImportResult {
 	results := make([]ImportResult, len(stories))
 	// 行号到禅道ID的映射（用于解析 @n 引用）
@@ -263,10 +264,18 @@ func (i *Importer) ImportStories(stories []story.Story) []ImportResult {
 	// 第一阶段：导入 Epic
 	i.logger.Info("========== 阶段1: 导入业务需求(Epic) ==========")
 	for _, idx := range epics {
-		s := stories[idx]
-		results[idx] = i.ImportStory(&s)
+		s := &stories[idx]
+		i.resolveParentRef(s, rowIDMap)
+		results[idx] = i.ImportStory(s)
 		if results[idx].Success {
-			rowIDMap[s.RowIndex] = results[idx].StoryID
+			// Epic创建API不返回ID，通过产品列表查询获取实际ID
+			actualID := i.resolveCreatedID(s.Type, s.ProductID, s.Title, results[idx].StoryID)
+			if actualID > 0 {
+				results[idx].StoryID = actualID
+				rowIDMap[s.RowIndex] = actualID
+			} else {
+				rowIDMap[s.RowIndex] = results[idx].StoryID
+			}
 		}
 	}
 
@@ -277,7 +286,14 @@ func (i *Importer) ImportStories(stories []story.Story) []ImportResult {
 		i.resolveParentRef(s, rowIDMap)
 		results[idx] = i.ImportStory(s)
 		if results[idx].Success {
-			rowIDMap[s.RowIndex] = results[idx].StoryID
+			// Requirement创建API不返回ID，通过产品列表查询获取实际ID
+			actualID := i.resolveCreatedID(s.Type, s.ProductID, s.Title, results[idx].StoryID)
+			if actualID > 0 {
+				results[idx].StoryID = actualID
+				rowIDMap[s.RowIndex] = actualID
+			} else {
+				rowIDMap[s.RowIndex] = results[idx].StoryID
+			}
 		}
 	}
 
@@ -287,6 +303,7 @@ func (i *Importer) ImportStories(stories []story.Story) []ImportResult {
 		s := &stories[idx]
 		i.resolveParentRef(s, rowIDMap)
 		results[idx] = i.ImportStory(s)
+		// Story创建API会返回ID，无需额外查询
 		if results[idx].Success {
 			rowIDMap[s.RowIndex] = results[idx].StoryID
 		}
@@ -302,6 +319,55 @@ func (i *Importer) ImportStories(stories []story.Story) []ImportResult {
 	i.logger.Info("层级导入完成，成功: %d，失败: %d", successCount, len(stories)-successCount)
 
 	return results
+}
+
+// resolveCreatedID 查询禅道获取需求创建后的实际ID
+// Epic和Requirement的创建API不返回ID，需要通过产品列表按标题匹配查询
+// Story类型的创建API会返回ID，直接使用即可
+func (i *Importer) resolveCreatedID(sType story.StoryType, productID int, title string, createRespID int) int {
+	// Story类型创建API会返回ID，直接使用
+	if sType == story.StoryTypeStory && createRespID > 0 {
+		return createRespID
+	}
+
+	// Epic/Requirement创建API不返回ID，通过产品列表按标题匹配查询
+	switch sType {
+	case story.StoryTypeEpic:
+		items, err := i.epicCreator.ProductsListAll(productID)
+		if err != nil {
+			i.logger.Info("查询产品业务需求列表失败(产品ID=%d): %v", productID, err)
+			return createRespID
+		}
+		for _, item := range items {
+			if item.Title == title {
+				i.logger.Info("通过产品列表查询到业务需求实际ID: %d (标题: %s)", item.ID, title)
+				return item.ID
+			}
+		}
+		i.logger.Info("在产品业务需求列表中未找到匹配项(产品ID=%d, 标题=%s)", productID, title)
+
+	case story.StoryTypeRequirement:
+		items, err := i.reqCreator.ProductsListAll(productID)
+		if err != nil {
+			i.logger.Info("查询产品用户需求列表失败(产品ID=%d): %v", productID, err)
+			return createRespID
+		}
+		for _, item := range items {
+			if item.Title == title {
+				i.logger.Info("通过产品列表查询到用户需求实际ID: %d (标题: %s)", item.ID, title)
+				return item.ID
+			}
+		}
+		i.logger.Info("在产品用户需求列表中未找到匹配项(产品ID=%d, 标题=%s)", productID, title)
+	}
+
+	// 如果创建API返回了ID（某些版本可能支持），直接使用
+	if createRespID > 0 {
+		return createRespID
+	}
+
+	i.logger.Info("无法获取需求实际ID(标题=%s)，创建返回ID=%d", title, createRespID)
+	return 0
 }
 
 // resolveParentRef 解析父需求引用，将 "@行号" 格式替换为实际的禅道ID

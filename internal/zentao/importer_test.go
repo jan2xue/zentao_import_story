@@ -86,7 +86,7 @@ func TestImporter_ImportStory_RequirementModuleMissing(t *testing.T) {
 	var buf bytes.Buffer
 	log := logger.NewLoggerWithWriter(&buf)
 
-	cfg := &mockConfig{module: 0, reviewer: ""} // 模块ID=0，应失败
+	cfg := &mockConfig{module: -1, reviewer: ""} // 模块ID=-1，应失败
 	importer := NewImporterWithMocks(log, nil, nil, nil, cfg)
 
 	s := &story.Story{
@@ -105,6 +105,101 @@ func TestImporter_ImportStory_RequirementModuleMissing(t *testing.T) {
 	}
 	if result.Error == nil {
 		t.Fatal("期望有错误信息")
+	}
+}
+
+func TestImporter_ImportStories_EpicRequirementResolveID(t *testing.T) {
+	var buf bytes.Buffer
+	log := logger.NewLoggerWithWriter(&buf)
+
+	// Epic创建API不返回ID（ID=0），需通过列表查询获取
+	mockEpic := &mockEpicService{
+		createFn: func(req EpicCreateRequest) (*EpicCreateResponse, *req.Response, error) {
+			return &EpicCreateResponse{Status: "success", ID: 0}, nil, nil // 模拟API不返回ID
+		},
+		listFn: func(productID int) ([]EpicListItem, error) {
+			return []EpicListItem{
+				{ID: 501, Title: "业务需求A", Product: 1},
+			}, nil
+		},
+		deleteFn: func(id int) (map[string]interface{}, *req.Response, error) {
+			return nil, nil, nil
+		},
+	}
+
+	// Requirement创建API不返回ID，需通过列表查询获取
+	mockReq := &mockReqService{
+		createFn: func(req RequirementCreateRequest) (*RequirementCreateResponse, *req.Response, error) {
+			// 验证ParentID已正确解析为501（Epic的实际ID）
+			if req.Parent != 501 {
+				t.Errorf("期望Requirement的Parent=501, 得到 %d", req.Parent)
+			}
+			return &RequirementCreateResponse{Status: "success", ID: 0}, nil, nil
+		},
+		listFn: func(productID int) ([]RequirementListItem, error) {
+			return []RequirementListItem{
+				{ID: 601, Title: "用户需求B", Product: 1},
+			}, nil
+		},
+		deleteFn: func(id int) (map[string]interface{}, *req.Response, error) {
+			return nil, nil, nil
+		},
+	}
+
+	// Story创建API返回ID
+	mockStorySvc := &mockStoryService{
+		createFn: func(req StoryCreateRequest) (*StoryCreateResponse, *req.Response, error) {
+			// 验证ParentID已正确解析为601（Requirement的实际ID）
+			if req.Parent != 601 {
+				t.Errorf("期望Story的Parent=601, 得到 %d", req.Parent)
+			}
+			return &StoryCreateResponse{Status: "success", ID: 701}, nil, nil
+		},
+		deleteFn: func(id int) (map[string]interface{}, *req.Response, error) {
+			return nil, nil, nil
+		},
+		listFn: func(productID int) ([]StoryListItem, error) {
+			return nil, nil
+		},
+	}
+
+	cfg := &mockConfig{module: 1, reviewer: "tester"}
+	importer := NewImporterWithMocks(log, mockEpic, mockReq, mockStorySvc, cfg)
+
+	stories := []story.Story{
+		{Type: story.StoryTypeEpic, Title: "业务需求A", ProductID: 1, Priority: 3, Category: "feature", RowIndex: 2},
+		{Type: story.StoryTypeRequirement, Title: "用户需求B", ProductID: 1, Priority: 3, Category: "feature", ParentRef: "@2", RowIndex: 3},
+		{Type: story.StoryTypeStory, Title: "研发需求C", ProductID: 1, Priority: 3, Category: "feature", ParentRef: "@3", RowIndex: 4},
+	}
+
+	results := importer.ImportStories(stories)
+
+	if len(results) != 3 {
+		t.Fatalf("期望3个结果, 得到 %d", len(results))
+	}
+
+	// Epic: 创建返回ID=0, 通过列表查询得到ID=501
+	if !results[0].Success {
+		t.Fatal("Epic应导入成功")
+	}
+	if results[0].StoryID != 501 {
+		t.Errorf("Epic的StoryID应为501(通过列表查询), 得到 %d", results[0].StoryID)
+	}
+
+	// Requirement: 创建返回ID=0, 通过列表查询得到ID=601
+	if !results[1].Success {
+		t.Fatal("Requirement应导入成功")
+	}
+	if results[1].StoryID != 601 {
+		t.Errorf("Requirement的StoryID应为601(通过列表查询), 得到 %d", results[1].StoryID)
+	}
+
+	// Story: 创建返回ID=701
+	if !results[2].Success {
+		t.Fatal("Story应导入成功")
+	}
+	if results[2].StoryID != 701 {
+		t.Errorf("Story的StoryID应为701, 得到 %d", results[2].StoryID)
 	}
 }
 
