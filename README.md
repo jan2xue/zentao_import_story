@@ -113,7 +113,7 @@ defaultModule: 0                        # 默认模块ID，创建用户需求时
 | `excelFile` | Excel 文件路径 | 导入时必填 |
 | `defaultPriority` | 默认优先级 1-4 | 否，默认 3 |
 | `defaultReviewer` | 默认评审人用户名 | **是**，API 要求必填 |
-| `defaultModule` | 默认模块ID | 用户需求必填 |
+| `defaultModule` | 默认模块ID | 用户需求在Excel未指定时必填 |
 
 > [!IMPORTANT]
 > `defaultReviewer` 为必填项，禅道 API 创建需求时要求指定评审人。
@@ -139,7 +139,7 @@ defaultModule: 0                        # 默认模块ID，创建用户需求时
 
 ### 父需求引用
 
-**父需求引用格式**（Excel第7列"父需求ID"）：
+**父需求引用格式**（Excel第8列"父需求ID"）：
 - `@行号`：引用本 Excel 中第 N 行数据创建后得到的禅道 ID（如 `@1` 引用第 1 行），行号从1开始（不包含标题行）
 - 纯数字：直接使用禅道系统中已存在的需求 ID
 
@@ -194,30 +194,31 @@ defaultModule: 0                        # 默认模块ID，创建用户需求时
 
 ## 📊 Excel 格式说明
 
-### 列格式（第一行为标题行，共12列）
+### 列格式（第一行为标题行，共13列）
 
 | 列序号 | 列名 | 必填 | 说明 |
 |--------|------|------|------|
 | 1 | 需求类型 | 是 | `epic`/`requirement`/`story` |
-| 2 | 标题 | 是 | 需求的标题 |
-| 3 | 产品ID | 是 | 数字，禅道中的产品ID |
-| 4 | 优先级 | 否 | 1-4的数字，默认3 |
-| 5 | 分类 | 是 | feature/interface/performance/safe/experience/improve/other |
-| 6 | 需求描述 | 是 | 详细描述 |
-| 7 | 父需求ID | 否 | `@行号`引用或纯数字ID |
-| 8 | 来源 | 否 | customer/user/po/market/service/operation/support/competitor/partner/dev/tester/bug/forum/other |
-| 9 | 来源备注 | 否 | 字符串 |
-| 10 | 预计工时 | 否 | 数字 |
-| 11 | 关键词 | 否 | 字符串 |
-| 12 | 验收标准 | 否 | 字符串 |
+| 2 | 产品ID | 是 | 数字，禅道中的产品ID |
+| 3 | 模块ID | 否 | 数字，不填则使用配置文件默认值 |
+| 4 | 标题 | 是 | 需求的标题 |
+| 5 | 优先级 | 否 | 1-4的数字，默认3 |
+| 6 | 分类 | 是 | feature/interface/performance/safe/experience/improve/other |
+| 7 | 需求描述 | 是 | 详细描述 |
+| 8 | 父需求ID | 否 | `@行号`引用或纯数字ID |
+| 9 | 来源 | 否 | customer/user/po/market/service/operation/support/competitor/partner/dev/tester/bug/forum/other |
+| 10 | 来源备注 | 否 | 字符串 |
+| 11 | 预计工时 | 否 | 数字 |
+| 12 | 关键词 | 否 | 字符串 |
+| 13 | 验收标准 | 否 | 字符串 |
 
 ### 示例数据
 
-| 需求类型 | 标题 | 产品ID | 优先级 | 分类 | 需求描述 | 父需求ID | 来源 | 来源备注 | 预计工时 | 关键词 | 验收标准 |
-|----------|------|--------|--------|------|----------|----------|------|----------|----------|--------|----------|
-| epic | 智能座舱系统 | 78 | 1 | feature | 开发新一代智能座舱系统，集成多媒体、导航、语音控制等功能 | | market | 市场调研 | 100 | 智能座舱,多媒体 | 功能完整，性能稳定 |
-| requirement | 语音控制功能 | 78 | 2 | feature | 用户可以通过语音控制车内设备 | @1 | user | 用户反馈 | 20 | 语音,控制 | 识别率95%以上 |
-| story | 实现语音识别模块 | 78 | 3 | feature | 开发语音识别核心模块，支持中英文识别 | @2 | dev | 技术方案 | 40 | 语音识别,AI | 单元测试覆盖率80% |
+| 需求类型 | 产品ID | 模块ID | 标题 | 优先级 | 分类 | 需求描述 | 父需求ID | 来源 | 来源备注 | 预计工时 | 关键词 | 验收标准 |
+|----------|--------|--------|------|--------|------|----------|----------|------|----------|----------|--------|----------|
+| epic | 78 | | 智能座舱系统 | 1 | feature | 开发新一代智能座舱系统，集成多媒体、导航、语音控制等功能 | | market | 市场调研 | 100 | 智能座舱,多媒体 | 功能完整，性能稳定 |
+| requirement | 78 | 5 | 语音控制功能 | 2 | feature | 用户可以通过语音控制车内设备 | @1 | user | 用户反馈 | 20 | 语音,控制 | 识别率95%以上 |
+| story | 78 | 5 | 实现语音识别模块 | 3 | feature | 开发语音识别核心模块，支持中英文识别 | @2 | dev | 技术方案 | 40 | 语音识别,AI | 单元测试覆盖率80% |
 
 > 说明：`@1` 引用第1行（智能座舱系统）创建后的禅道ID，`@2` 引用第2行（语音控制功能）创建后的禅道ID。
 
@@ -262,17 +263,19 @@ defaultModule: 0                        # 默认模块ID，创建用户需求时
 
 > [!IMPORTANT]
 > - 所有类型的需求（epic/requirement/story）均需在 `config.yaml` 中配置 `defaultReviewer`（评审人用户名）
-> - 用户需求(requirement)还需在 `config.yaml` 中配置 `defaultModule`（有效的模块ID）
+> - 用户需求(requirement)需要有效的模块ID，可通过Excel第3列"模块ID"指定，或在 `config.yaml` 中配置 `defaultModule` 作为默认值
 
-### 配置模块ID（用户需求）
+### 模块ID配置
 
-用户需求(requirement)必须指定有效的模块ID。获取模块ID的步骤：
+模块ID优先从Excel第3列"模块ID"读取；若该列为空，则使用 `config.yaml` 中的 `defaultModule`。
+
+用户需求(requirement)必须指定有效的模块ID(>0)。获取模块ID的步骤：
 
 1. 登录禅道 Web 界面
 2. 进入 **产品** → 选择产品 → **模块**
 3. 创建或查看模块
 4. 从 URL 或模块列表中获取模块ID（如：`/product-module-edit-1-0-0.html` 中的 `1`）
-5. 在 `config.yaml` 中配置：
+5. 在Excel模块ID列填写，或在 `config.yaml` 中配置：
    ```yaml
    defaultModule: 1  # 替换为实际的模块ID
    ```

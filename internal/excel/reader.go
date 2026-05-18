@@ -30,7 +30,7 @@ func (r *Reader) Close() error {
 }
 
 // ReadStories 读取层级需求数据
-// Excel列定义: 需求类型 | 标题 | 产品ID | 优先级 | 分类 | 需求描述 | 父需求ID | 来源 | 来源备注 | 预计工时 | 关键词 | 验收标准
+// Excel列定义: 需求类型 | 产品ID | 模块ID | 标题 | 优先级 | 分类 | 需求描述 | 父需求ID | 来源 | 来源备注 | 预计工时 | 关键词 | 验收标准
 // 父需求ID支持格式: "@n"引用第n行数据的禅道ID，或纯数字作为实际禅道ID
 func (r *Reader) ReadStories(defaultPriority int) ([]story.Story, error) {
 	sheets := r.file.GetSheetList()
@@ -60,9 +60,9 @@ func (r *Reader) ReadStories(defaultPriority int) ([]story.Story, error) {
 }
 
 // parseRow 解析Excel行数据
-// Excel列定义: 需求类型 | 标题 | 产品ID | 优先级 | 分类 | 需求描述 | 父需求ID | 来源 | 来源备注 | 预计工时 | 关键词 | 验收标准
+// Excel列定义: 需求类型 | 产品ID | 模块ID | 标题 | 优先级 | 分类 | 需求描述 | 父需求ID | 来源 | 来源备注 | 预计工时 | 关键词 | 验收标准
 func (r *Reader) parseRow(row []string, defaultPriority int, rowIndex int) (story.Story, error) {
-	if len(row) < 5 {
+	if len(row) < 7 {
 		return story.Story{}, fmt.Errorf("行数据不完整，缺少必填字段，当前列数: %d", len(row))
 	}
 
@@ -79,30 +79,42 @@ func (r *Reader) parseRow(row []string, defaultPriority int, rowIndex int) (stor
 		return story.Story{}, fmt.Errorf("无效的需求类型: %s，支持: epic/requirement/story", strings.TrimSpace(row[0]))
 	}
 
-	// 解析标题 (第2列)
-	title := strings.TrimSpace(row[1])
-	if title == "" {
-		return story.Story{}, fmt.Errorf("标题不能为空")
-	}
-
-	// 解析产品ID (第3列)
-	productID, err := strconv.Atoi(strings.TrimSpace(row[2]))
+	// 解析产品ID (第2列)
+	productID, err := strconv.Atoi(strings.TrimSpace(row[1]))
 	if err != nil {
 		return story.Story{}, fmt.Errorf("产品ID必须是数字: %w", err)
 	}
 
-	// 解析优先级 (第4列)
+	// 解析模块ID (第3列) - 可选，0表示未指定，将使用配置文件默认值
+	moduleID := 0
+	if len(row) > 2 && strings.TrimSpace(row[2]) != "" {
+		moduleID, err = strconv.Atoi(strings.TrimSpace(row[2]))
+		if err != nil {
+			return story.Story{}, fmt.Errorf("模块ID必须是数字: %w", err)
+		}
+		if moduleID < 0 {
+			return story.Story{}, fmt.Errorf("模块ID不能为负数: %d", moduleID)
+		}
+	}
+
+	// 解析标题 (第4列)
+	title := strings.TrimSpace(row[3])
+	if title == "" {
+		return story.Story{}, fmt.Errorf("标题不能为空")
+	}
+
+	// 解析优先级 (第5列)
 	priority := defaultPriority
-	if len(row) > 3 && strings.TrimSpace(row[3]) != "" {
-		p, err := strconv.Atoi(strings.TrimSpace(row[3]))
+	if len(row) > 4 && strings.TrimSpace(row[4]) != "" {
+		p, err := strconv.Atoi(strings.TrimSpace(row[4]))
 		if err != nil || p < 1 || p > 4 {
 			return story.Story{}, fmt.Errorf("优先级必须是1-4之间的数字")
 		}
 		priority = p
 	}
 
-	// 解析分类 (第5列)
-	category := strings.TrimSpace(row[4])
+	// 解析分类 (第6列)
+	category := strings.TrimSpace(row[5])
 	if category == "" {
 		return story.Story{}, fmt.Errorf("分类不能为空")
 	}
@@ -113,20 +125,21 @@ func (r *Reader) parseRow(row []string, defaultPriority int, rowIndex int) (stor
 		ProductID: productID,
 		Priority:  priority,
 		Category:  category,
+		Module:    moduleID,
 		RowIndex:  rowIndex,
 	}
 
-	// 解析需求描述 (第6列)
-	if len(row) > 5 {
-		s.Spec = strings.TrimSpace(row[5])
+	// 解析需求描述 (第7列)
+	if len(row) > 6 {
+		s.Spec = strings.TrimSpace(row[6])
 	}
 	if s.Spec == "" {
 		return story.Story{}, fmt.Errorf("需求描述不能为空")
 	}
 
-	// 解析父需求ID (第7列) - 支持 "@n" 引用格式
-	if len(row) > 6 {
-		if parentRef := strings.TrimSpace(row[6]); parentRef != "" {
+	// 解析父需求ID (第8列) - 支持 "@n" 引用格式
+	if len(row) > 7 {
+		if parentRef := strings.TrimSpace(row[7]); parentRef != "" {
 			s.ParentRef = parentRef
 			// 如果是纯数字，直接解析为禅道ID
 			if id, err := strconv.Atoi(parentRef); err == nil {
@@ -136,29 +149,29 @@ func (r *Reader) parseRow(row []string, defaultPriority int, rowIndex int) (stor
 		}
 	}
 
-	// 解析来源 (第8列)
-	if len(row) > 7 {
-		s.Source = strings.TrimSpace(row[7])
-	}
-	// 解析来源备注 (第9列)
+	// 解析来源 (第9列)
 	if len(row) > 8 {
-		s.SourceNote = strings.TrimSpace(row[8])
+		s.Source = strings.TrimSpace(row[8])
 	}
-	// 解析预计工时 (第10列)
+	// 解析来源备注 (第10列)
 	if len(row) > 9 {
-		if estimate := strings.TrimSpace(row[9]); estimate != "" {
+		s.SourceNote = strings.TrimSpace(row[9])
+	}
+	// 解析预计工时 (第11列)
+	if len(row) > 10 {
+		if estimate := strings.TrimSpace(row[10]); estimate != "" {
 			if est, err := strconv.ParseFloat(estimate, 64); err == nil {
 				s.Estimate = est
 			}
 		}
 	}
-	// 解析关键词 (第11列)
-	if len(row) > 10 {
-		s.Keywords = strings.TrimSpace(row[10])
-	}
-	// 解析验收标准 (第12列)
+	// 解析关键词 (第12列)
 	if len(row) > 11 {
-		s.Verify = strings.TrimSpace(row[11])
+		s.Keywords = strings.TrimSpace(row[11])
+	}
+	// 解析验收标准 (第13列)
+	if len(row) > 12 {
+		s.Verify = strings.TrimSpace(row[12])
 	}
 
 	return s, nil

@@ -141,7 +141,10 @@ func (i *Importer) createEpic(s *story.Story) (int, *req.Response, error) {
 		req.Reviewer = []string{i.config.GetDefaultReviewer()}
 	}
 
-	i.logger.Debug("创建业务请求 - 产品ID: %d, 标题: %s", s.ProductID, s.Title)
+	// 设置模块ID（优先使用Excel中指定的模块ID，否则使用配置文件默认值）
+	req.Module = i.resolveModule(s.Module)
+
+	i.logger.Debug("创建业务请求 - 产品ID: %d, 标题: %s, 模块ID: %d", s.ProductID, s.Title, req.Module)
 
 	resp, rsp, err := i.epicCreator.Create(req)
 	if err != nil {
@@ -172,11 +175,11 @@ func (i *Importer) createRequirement(s *story.Story) (int, *req.Response, error)
 		Estimate:   s.Estimate,
 	}
 
-	// 设置模块ID（用户需求必须指定有效的模块ID）
-	if i.config.GetDefaultModule() >= 0 {
-		req.Module = i.config.GetDefaultModule()
-	} else {
-		return 0, nil, fmt.Errorf("创建用户需求需要有效的模块ID，请在config.yaml中配置defaultModule参数")
+	// 设置模块ID（优先使用Excel中指定的模块ID，否则使用配置文件默认值）
+	req.Module = i.resolveModule(s.Module)
+	// 用户需求必须指定有效的模块ID（>0），Excel和配置文件都未提供时报错
+	if req.Module <= 0 {
+		return 0, nil, fmt.Errorf("创建用户需求需要有效的模块ID，请在Excel模块列或config.yaml中配置defaultModule参数")
 	}
 
 	// 设置评审人（如果配置了默认评审人）
@@ -215,12 +218,15 @@ func (i *Importer) createStory(s *story.Story) (int, *req.Response, error) {
 		Estimate:   s.Estimate,
 	}
 
+	// 设置模块ID（优先使用Excel中指定的模块ID，否则使用配置文件默认值）
+	req.Module = i.resolveModule(s.Module)
+
 	// 设置评审人（如果配置了默认评审人）
 	if i.config.GetDefaultReviewer() != "" {
 		req.Reviewer = []string{i.config.GetDefaultReviewer()}
 	}
 
-	i.logger.Debug("创建研发需求请求 - 产品ID: %d, 标题: %s", s.ProductID, s.Title)
+	i.logger.Debug("创建研发需求请求 - 产品ID: %d, 标题: %s, 模块ID: %d", s.ProductID, s.Title, req.Module)
 
 	resp, rsp, err := i.storyCreator.Create(req)
 	if err != nil {
@@ -324,6 +330,22 @@ func (i *Importer) ImportStories(stories []story.Story) []ImportResult {
 	i.logger.Info("层级导入完成，成功: %d，失败: %d", successCount, len(stories)-successCount)
 
 	return results
+}
+
+// resolveModule 解析模块ID，优先使用Excel中指定的模块ID，否则降级使用配置文件默认值
+// Excel模块ID > 0 表示明确指定了有效模块，直接使用
+// Excel模块ID = 0 表示未指定，使用配置文件默认值
+// 配置文件默认值 <= 0 表示未配置有效模块，返回0
+// 注意：用户需求(Requirement)要求模块ID > 0，由调用方额外校验
+func (i *Importer) resolveModule(excelModule int) int {
+	if excelModule > 0 {
+		return excelModule
+	}
+	defaultModule := i.config.GetDefaultModule()
+	if defaultModule > 0 {
+		return defaultModule
+	}
+	return 0
 }
 
 // resolveCreatedID 查询禅道获取需求创建后的实际ID
