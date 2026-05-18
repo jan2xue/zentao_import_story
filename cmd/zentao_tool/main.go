@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 
 	"gopkg.in/yaml.v3"
@@ -43,9 +42,10 @@ func main() {
 	// 解析命令行参数
 	configPath := flag.String("config", "config.yaml", "配置文件路径")
 	excelPath := flag.String("excel", "requirements.xlsx", "Excel文件路径")
-	action := flag.String("action", "import", "操作类型: import(导入) 或 delete(删除)")
-	productID := flag.Int("product", 0, "产品ID(删除时使用)")
-	storyIDs := flag.String("ids", "", "要删除的需求ID列表，多个ID用逗号分隔(删除时使用)")
+	action := flag.String("action", "import", "操作类型: import(导入)、delete(删除)")
+	productID := flag.Int("product", 0, "产品ID（删除时必填）")
+	titleFilter := flag.String("title", "", "标题筛选（删除时可选，部分匹配）")
+	openedByFilter := flag.String("openedBy", "", "创建者筛选（删除时可选，精确匹配账号名）")
 	flag.Parse()
 
 	// 加载配置文件
@@ -69,7 +69,7 @@ func main() {
 	case "import":
 		handleImport(cfg, log)
 	case "delete":
-		handleDelete(cfg, log, *storyIDs, *productID)
+		handleDelete(cfg, log, *productID, *titleFilter, *openedByFilter)
 	default:
 		log.Fatal("不支持的操作类型: %s，仅支持 import 或 delete", *action)
 	}
@@ -200,80 +200,102 @@ func handleImport(cfg *config.Config, log *logger.Logger) {
 }
 
 // handleDelete 处理删除操作
-func handleDelete(cfg *config.Config, log *logger.Logger, storyIDsStr string, productID int) {
-	var typedIDs []zentao.TypedID
-	useProductMode := false
+// 必须指定产品ID，支持标题（部分匹配）和创建者作为可选过滤条件
+func handleDelete(cfg *config.Config, log *logger.Logger, productID int, titleFilter, openedByFilter string) {
+	if productID <= 0 {
+		log.Fatal("删除操作必须指定产品ID (-product 参数)")
+	}
 
-	// 解析需求ID列表
-	if storyIDsStr != "" {
-		// 从命令行参数解析ID列表（纯本地操作，不会触发API）
-		// 直接指定ID时默认按story类型删除
-		idStrs := strings.Split(storyIDsStr, ",")
-		for _, idStr := range idStrs {
-			idStr = strings.TrimSpace(idStr)
-			if idStr == "" {
-				continue
-			}
-			id, err := strconv.Atoi(idStr)
-			if err != nil {
-				log.Fatal("无效的需求ID: %s", idStr)
-			}
-			typedIDs = append(typedIDs, zentao.TypedID{ID: id, Type: story.StoryTypeStory})
-		}
-	} else if productID > 0 {
-		// 产品删除模式：先确认，确认后再查询
-		useProductMode = true
+	separator := strings.Repeat("=", 60)
+
+	// 显示筛选条件
+	fmt.Printf("\n%s\n", separator)
+	fmt.Printf("           删除需求 — 筛选条件\n")
+	fmt.Printf("%s\n\n", separator)
+	fmt.Printf("  产品ID: %d\n", productID)
+	if titleFilter != "" {
+		fmt.Printf("  标题筛选: \"%s\"（部分匹配）\n", titleFilter)
 	} else {
-		log.Fatal("删除操作需要指定需求ID列表 (-ids 参数) 或产品ID (-product 参数)")
+		fmt.Printf("  标题筛选: (无)\n")
 	}
-
-	// 显示确认提示（对于产品模式，此时尚未调用任何API）
-	if useProductMode {
-		fmt.Printf("\n⚠️  警告: 即将删除产品 %d 下的所有需求（包括Epic/Requirement/Story）\n", productID)
-		fmt.Printf("   (系统将在确认后查询实际需求数量)\n")
+	if openedByFilter != "" {
+		fmt.Printf("  创建者筛选: \"%s\"（精确匹配）\n", openedByFilter)
 	} else {
-		fmt.Printf("\n⚠️  警告: 即将删除 %d 个需求\n", len(typedIDs))
-		ids := make([]int, len(typedIDs))
-		for i, t := range typedIDs {
-			ids[i] = t.ID
-		}
-		fmt.Printf("需求ID列表: %v\n", ids)
-	}
-	fmt.Printf("\n此操作不可撤销，是否继续? (yes/no): ")
-
-	reader := bufio.NewReader(os.Stdin)
-	response, err := reader.ReadString('\n')
-	if err != nil {
-		log.Fatal("读取用户输入失败: %v", err)
+		fmt.Printf("  创建者筛选: (无)\n")
 	}
 
-	response = strings.TrimSpace(strings.ToLower(response))
-	if response != "yes" && response != "y" {
-		log.Info("取消删除操作")
-		return
-	}
-
-	// 创建禅道客户端（确认后才创建，避免无谓的API调用）
+	// 创建禅道客户端
 	client, err := zentao.NewClient(cfg)
 	if err != nil {
 		log.Fatal("创建禅道客户端失败: %v", err)
 	}
 
-	// 产品模式：确认后查询实际需求ID（获取所有类型）
-	if useProductMode {
-		typedIDs = fetchStoryIDsByProduct(client, log, productID)
-		if len(typedIDs) == 0 {
-			log.Info("产品 %d 下没有找到任何需求，无需删除", productID)
-			return
+	// 获取产品信息
+	productInfo, err := client.Product.GetProductInfo([]int{productID})
+	if err != nil {
+		log.Error("获取产品信息失败: %v，继续执行", err)
+	} else {
+		if name, ok := productInfo[productID]; ok && name != "" {
+			fmt.Printf("  产品名称: %s\n", name)
 		}
-		log.Info("产品 %d 下共发现 %d 个需求，开始删除", productID, len(typedIDs))
 	}
 
-	// 创建删除器
+	// 查询匹配的需求
+	log.Info("正在查询匹配的需求...")
 	deleter := zentao.NewDeleter(client, log)
+	filter := zentao.DeleteFilter{
+		ProductID: productID,
+		Title:     titleFilter,
+		OpenedBy:  openedByFilter,
+	}
+	matchedItems := deleter.FetchByFilter(filter)
 
-	// 执行删除
-	results := deleter.DeleteStories(typedIDs)
+	if len(matchedItems) == 0 {
+		fmt.Printf("\n未找到匹配的需求。\n")
+		log.Info("未找到匹配的需求，产品ID=%d，标题=%s，创建者=%s", productID, titleFilter, openedByFilter)
+		return
+	}
+
+	// 显示匹配结果
+	fmt.Printf("\n%s\n", separator)
+	fmt.Printf("           匹配结果\n")
+	fmt.Printf("%s\n\n", separator)
+	fmt.Print(zentao.FormatMatchedList(matchedItems))
+
+	// 二次确认
+	fmt.Printf("\n%s\n", separator)
+	fmt.Printf("\n⚠️  警告: 即将删除以上 %d 个需求！\n", len(matchedItems))
+	conditions := []string{fmt.Sprintf("产品ID=%d", productID)}
+	if titleFilter != "" {
+		conditions = append(conditions, fmt.Sprintf("标题包含\"%s\"", titleFilter))
+	}
+	if openedByFilter != "" {
+		conditions = append(conditions, fmt.Sprintf("创建者=\"%s\"", openedByFilter))
+	}
+	fmt.Printf("   筛选条件: %s\n", strings.Join(conditions, ", "))
+	fmt.Printf("   此操作不可撤销！\n")
+	fmt.Printf("\n请输入 \"yes\" 确认删除: ")
+
+	reader := bufio.NewReader(os.Stdin)
+	confirmInput, err := reader.ReadString('\n')
+	if err != nil {
+		log.Fatal("读取用户输入失败: %v", err)
+	}
+
+	confirmInput = strings.TrimSpace(strings.ToLower(confirmInput))
+	if confirmInput != "yes" && confirmInput != "y" {
+		log.Info("取消删除操作")
+		return
+	}
+
+	// 执行删除（大批量时使用并发）
+	var results []zentao.DeleteResult
+	if len(matchedItems) > 20 {
+		log.Info("大批量删除(>20条)，使用并发模式")
+		results = deleter.DeleteStoriesConcurrent(matchedItems, 5)
+	} else {
+		results = deleter.DeleteStories(matchedItems)
+	}
 
 	// 生成并打印报告
 	report := deleter.GenerateDeleteReport(results)
@@ -281,7 +303,6 @@ func handleDelete(cfg *config.Config, log *logger.Logger, storyIDsStr string, pr
 
 	log.Info("日志文件已保存至: %s", log.GetLogFilePath())
 
-	// 如果有失败的删除，记录但遍历全部后再退出
 	hasFailure := false
 	for _, result := range results {
 		if !result.Success {
@@ -291,41 +312,6 @@ func handleDelete(cfg *config.Config, log *logger.Logger, storyIDsStr string, pr
 	if hasFailure {
 		os.Exit(1)
 	}
-}
-
-// fetchStoryIDsByProduct 从产品获取所有类型的需求ID
-func fetchStoryIDsByProduct(client *zentao.Client, log *logger.Logger, productID int) []zentao.TypedID {
-	var typedIDs []zentao.TypedID
-
-	// 获取所有类型的需求
-	epics, err := client.Epic.ProductsListAll(productID)
-	if err != nil {
-		log.Error("获取产品业务需求列表失败: %v", err)
-	} else {
-		for _, e := range epics {
-			typedIDs = append(typedIDs, zentao.TypedID{ID: e.ID, Type: story.StoryTypeEpic})
-		}
-	}
-
-	requirements, err := client.Requirement.ProductsListAll(productID)
-	if err != nil {
-		log.Error("获取产品用户需求列表失败: %v", err)
-	} else {
-		for _, r := range requirements {
-			typedIDs = append(typedIDs, zentao.TypedID{ID: r.ID, Type: story.StoryTypeRequirement})
-		}
-	}
-
-	stories, err := client.Story.ProductsListAll(productID)
-	if err != nil {
-		log.Error("获取产品研发需求列表失败: %v", err)
-	} else {
-		for _, s := range stories {
-			typedIDs = append(typedIDs, zentao.TypedID{ID: s.ID, Type: story.StoryTypeStory})
-		}
-	}
-
-	return typedIDs
 }
 
 // loadConfig 从YAML文件加载配置，支持环境变量覆盖敏感字段
@@ -377,3 +363,4 @@ func validateConfig(cfg *config.Config) error {
 	}
 	return nil
 }
+

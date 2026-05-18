@@ -8,9 +8,10 @@
 ## 🚀 核心功能
 
 *   **层级导入**：支持在一个 Excel 中混合填写不同类型需求，自动按 Epic → Requirement → Story 顺序导入并建立父子层级关系。
-*   **智能ID解析**：Epic/Requirement 创建后禅道不返回ID，工具自动通过产品列表查询实际ID，确保父子关系正确建立。
+*   **智能ID解析**：Epic/Requirement 创建后禅道不返回ID，工具自动通过产品列表查询实际ID（采用分层去重策略避免API返回重复数据），确保父子关系正确建立。
 *   **智能引用**：支持 `@行号` 格式引用父需求，无需提前知道禅道 ID，工具自动解析。
-*   **批量删除**：支持按需求ID或产品ID批量删除需求（按产品删除时自动涵盖所有类型），删除前有确认提示。
+*   **条件删除**：删除操作必须指定产品ID，支持标题（部分匹配）和创建者筛选组合条件，带二次确认防误删。
+*   **批量删除**：支持按产品ID批量删除需求（自动涵盖所有类型），删除前有确认提示。
 *   **产品确认**：导入前显示产品信息和需求类型分布，要求用户确认，防止数据导入错误产品。
 *   **自动分页**：删除功能支持自动分页获取，突破API默认20条限制。
 *   **智能字段映射**：自动将 Excel 列映射到禅道需求字段（标题、优先级、分类等）。
@@ -144,19 +145,29 @@ defaultModule: 0                        # 默认模块ID，创建用户需求时
 
 ### 删除需求
 
-```powershell
-# 按需求ID删除（支持多个ID，逗号分隔，默认按story类型）
-./zentao_story_tool.exe -action delete -ids 123,456,789
+删除操作必须指定产品ID，支持标题（部分匹配）和创建者（精确匹配）作为可选过滤条件：
 
-# 按产品ID删除该产品下所有需求（自动涵盖Epic/Requirement/Story所有类型，支持自动分页）
+```powershell
+# 删除产品78下所有需求（包括Epic/Requirement/Story）
 ./zentao_story_tool.exe -action delete -product 78
+
+# 删除产品78下标题包含"测试"的需求
+./zentao_story_tool.exe -action delete -product 78 -title 测试
+
+# 删除产品78下由zhangsan创建的需求
+./zentao_story_tool.exe -action delete -product 78 -openedBy zhangsan
+
+# 组合条件：标题含"测试"且创建者为zhangsan
+./zentao_story_tool.exe -action delete -product 78 -title 测试 -openedBy zhangsan
 ```
 
-> [!NOTE]
-> 按产品删除时，工具会自动获取该产品下所有类型的需求（Epic、Requirement、Story），不受API默认20条分页限制。
-
-> [!WARNING]
-> 删除操作会显示确认提示，需要输入 `yes` 或 `y` 确认后才会执行。此操作不可撤销！
+> [!IMPORTANT]
+> - `-product` 为必填参数
+> - `-title` 为部分匹配（包含即匹配）
+> - `-openedBy` 为精确匹配（需填写禅道账号名）
+> - 执行前会显示匹配结果列表，需输入 `yes` 确认后才删除
+> - 大批量删除(>20条)自动切换并发模式提升性能
+> - 查询时采用分层去重策略：先获取Story，再获取Requirement（去重），最后获取Epic（去重），避免禅道API返回的重复ID
 
 ### 高级用法
 
@@ -177,8 +188,9 @@ defaultModule: 0                        # 默认模块ID，创建用户需求时
 | `-config` | 配置文件路径 | `config.yaml` |
 | `-excel` | Excel 文件路径 | 配置文件中的值 |
 | `-action` | 操作类型: `import`(导入) 或 `delete`(删除) | `import` |
-| `-ids` | 需求ID列表（删除时使用，逗号分隔） | - |
-| `-product` | 产品ID（删除时使用） | - |
+| `-product` | 产品ID（删除时必填） | - |
+| `-title` | 标题筛选，部分匹配（删除时可选） | - |
+| `-openedBy` | 创建者筛选，精确匹配账号名（删除时可选） | - |
 
 ## 📊 Excel 格式说明
 
@@ -213,8 +225,8 @@ defaultModule: 0                        # 默认模块ID，创建用户需求时
 
 | 类型 | Excel值 | 说明 | 配置要求 |
 |------|---------|------|----------|
-| 业务需求 | `epic` | 高层次的业务需求，通常是产品的大功能模块 | 需要有相应权限 |
-| 用户需求 | `requirement` | 从用户角度出发的需求描述 | **需配置 `defaultModule`** |
+| 业务需求 | `epic` | 高层次的业务需求，通常是产品的大功能模块 | **需配置 `defaultReviewer`**，需有相应权限 |
+| 用户需求 | `requirement` | 从用户角度出发的需求描述 | **需配置 `defaultReviewer`** 和 `defaultModule` |
 | 研发需求 | `story` | 具体的研发实现需求，可直接分配给开发团队 | **需配置 `defaultReviewer`** |
 
 ### 分类选项
@@ -249,8 +261,8 @@ defaultModule: 0                        # 默认模块ID，创建用户需求时
 | `other` | 其他 |
 
 > [!IMPORTANT]
-> - 研发需求(story)需要在 `config.yaml` 中配置 `defaultReviewer`（评审人用户名）
-> - 用户需求(requirement)需要在 `config.yaml` 中配置 `defaultModule`（有效的模块ID）
+> - 所有类型的需求（epic/requirement/story）均需在 `config.yaml` 中配置 `defaultReviewer`（评审人用户名）
+> - 用户需求(requirement)还需在 `config.yaml` 中配置 `defaultModule`（有效的模块ID）
 
 ### 配置模块ID（用户需求）
 

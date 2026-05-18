@@ -136,6 +136,11 @@ func (i *Importer) createEpic(s *story.Story) (int, *req.Response, error) {
 		Estimate:   s.Estimate,
 	}
 
+	// 设置评审人（如果配置了默认评审人）
+	if i.config.GetDefaultReviewer() != "" {
+		req.Reviewer = []string{i.config.GetDefaultReviewer()}
+	}
+
 	i.logger.Debug("创建业务请求 - 产品ID: %d, 标题: %s", s.ProductID, s.Title)
 
 	resp, rsp, err := i.epicCreator.Create(req)
@@ -324,6 +329,8 @@ func (i *Importer) ImportStories(stories []story.Story) []ImportResult {
 // resolveCreatedID 查询禅道获取需求创建后的实际ID
 // Epic和Requirement的创建API不返回ID，需要通过产品列表按标题匹配查询
 // Story类型的创建API会返回ID，直接使用即可
+// 去重策略：Epic API会返回关联的Requirement和Story，Requirement API会返回关联的Story
+// 因此查询时需要排除低层级中已存在的ID，确保匹配到正确类型的实际ID
 func (i *Importer) resolveCreatedID(sType story.StoryType, productID int, title string, createRespID int) int {
 	// Story类型创建API会返回ID，直接使用
 	if sType == story.StoryTypeStory && createRespID > 0 {
@@ -331,31 +338,71 @@ func (i *Importer) resolveCreatedID(sType story.StoryType, productID int, title 
 	}
 
 	// Epic/Requirement创建API不返回ID，通过产品列表按标题匹配查询
+	// 需要去重：先获取低层级列表的ID，在高层级列表中排除这些ID
 	switch sType {
 	case story.StoryTypeEpic:
-		items, err := i.epicCreator.ProductsListAll(productID)
+		// 查询Epic时需排除Story和Requirement中已有的ID
+		seenIDs := make(map[int]bool)
+
+		stories, err := i.storyCreator.ProductsListAll(productID)
+		if err != nil {
+			i.logger.Info("查询产品研发需求列表失败(产品ID=%d): %v", productID, err)
+		} else {
+			for _, s := range stories {
+				seenIDs[s.ID] = true
+			}
+		}
+
+		requirements, err := i.reqCreator.ProductsListAll(productID)
+		if err != nil {
+			i.logger.Info("查询产品用户需求列表失败(产品ID=%d): %v", productID, err)
+		} else {
+			for _, r := range requirements {
+				seenIDs[r.ID] = true
+			}
+		}
+
+		epics, err := i.epicCreator.ProductsListAll(productID)
 		if err != nil {
 			i.logger.Info("查询产品业务需求列表失败(产品ID=%d): %v", productID, err)
 			return createRespID
 		}
-		for _, item := range items {
-			if item.Title == title {
-				i.logger.Info("通过产品列表查询到业务需求实际ID: %d (标题: %s)", item.ID, title)
-				return item.ID
+		for _, e := range epics {
+			if seenIDs[e.ID] {
+				continue // 跳过已在Story或Requirement中出现的ID
+			}
+			if e.Title == title {
+				i.logger.Info("通过产品列表查询到业务需求实际ID: %d (标题: %s)", e.ID, title)
+				return e.ID
 			}
 		}
 		i.logger.Info("在产品业务需求列表中未找到匹配项(产品ID=%d, 标题=%s)", productID, title)
 
 	case story.StoryTypeRequirement:
-		items, err := i.reqCreator.ProductsListAll(productID)
+		// 查询Requirement时需排除Story中已有的ID
+		seenIDs := make(map[int]bool)
+
+		stories, err := i.storyCreator.ProductsListAll(productID)
+		if err != nil {
+			i.logger.Info("查询产品研发需求列表失败(产品ID=%d): %v", productID, err)
+		} else {
+			for _, s := range stories {
+				seenIDs[s.ID] = true
+			}
+		}
+
+		requirements, err := i.reqCreator.ProductsListAll(productID)
 		if err != nil {
 			i.logger.Info("查询产品用户需求列表失败(产品ID=%d): %v", productID, err)
 			return createRespID
 		}
-		for _, item := range items {
-			if item.Title == title {
-				i.logger.Info("通过产品列表查询到用户需求实际ID: %d (标题: %s)", item.ID, title)
-				return item.ID
+		for _, r := range requirements {
+			if seenIDs[r.ID] {
+				continue // 跳过已在Story中出现的ID
+			}
+			if r.Title == title {
+				i.logger.Info("通过产品列表查询到用户需求实际ID: %d (标题: %s)", r.ID, title)
+				return r.ID
 			}
 		}
 		i.logger.Info("在产品用户需求列表中未找到匹配项(产品ID=%d, 标题=%s)", productID, title)
