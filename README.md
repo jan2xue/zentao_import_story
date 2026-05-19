@@ -113,12 +113,12 @@ defaultModule: 0                        # 默认模块ID，创建用户需求时
 | `excelFile` | Excel 文件路径 | 导入时必填 |
 | `defaultPriority` | 默认优先级 1-4 | 否，默认 3 |
 | `defaultReviewer` | 默认评审人用户名 | **是**，API 要求必填 |
-| `defaultModule` | 默认模块ID | 用户需求在Excel未指定时必填 |
+| `defaultModule` | 默认模块ID | Excel未填写模块ID时的回退值 |
 
 > [!IMPORTANT]
 > `defaultReviewer` 为必填项，禅道 API 创建需求时要求指定评审人。
 >
-> `defaultModule` 仅在导入用户需求(requirement)时需要，请先在禅道 Web 界面创建模块并获取模块ID。
+> `defaultModule` 为Excel未填写模块ID时的回退值。模块ID为0是合法值（表示不归属具体模块），Excel中填写0会直接使用而不会降级。
 
 ## 📖 使用方法
 
@@ -200,7 +200,7 @@ defaultModule: 0                        # 默认模块ID，创建用户需求时
 |--------|------|------|------|
 | 1 | 需求类型 | 是 | `epic`/`requirement`/`story` |
 | 2 | 产品ID | 是 | 数字，禅道中的产品ID |
-| 3 | 模块ID | 否 | 数字，不填则使用配置文件默认值 |
+| 3 | 模块ID | 否 | 数字，0=不归属具体模块（合法值），空=使用配置默认值 |
 | 4 | 标题 | 是 | 需求的标题 |
 | 5 | 优先级 | 否 | 1-4的数字，默认3 |
 | 6 | 分类 | 是 | feature/interface/performance/safe/experience/improve/other |
@@ -227,7 +227,7 @@ defaultModule: 0                        # 默认模块ID，创建用户需求时
 | 类型 | Excel值 | 说明 | 配置要求 |
 |------|---------|------|----------|
 | 业务需求 | `epic` | 高层次的业务需求，通常是产品的大功能模块 | **需配置 `defaultReviewer`**，需有相应权限 |
-| 用户需求 | `requirement` | 从用户角度出发的需求描述 | **需配置 `defaultReviewer`** 和 `defaultModule` |
+| 用户需求 | `requirement` | 从用户角度出发的需求描述 | **需配置 `defaultReviewer`**，模块ID可从Excel或`defaultModule`获取 |
 | 研发需求 | `story` | 具体的研发实现需求，可直接分配给开发团队 | **需配置 `defaultReviewer`** |
 
 ### 分类选项
@@ -263,13 +263,13 @@ defaultModule: 0                        # 默认模块ID，创建用户需求时
 
 > [!IMPORTANT]
 > - 所有类型的需求（epic/requirement/story）均需在 `config.yaml` 中配置 `defaultReviewer`（评审人用户名）
-> - 用户需求(requirement)需要有效的模块ID，可通过Excel第3列"模块ID"指定，或在 `config.yaml` 中配置 `defaultModule` 作为默认值
+> - 模块ID优先从Excel第3列读取，为空时使用配置文件 `defaultModule`。模块ID=0是合法值（不归属具体模块），填写0不会降级
 
 ### 模块ID配置
 
-模块ID优先从Excel第3列"模块ID"读取；若该列为空，则使用 `config.yaml` 中的 `defaultModule`。
+模块ID优先从Excel第3列"模块ID"读取；若该列为空，则使用 `config.yaml` 中的 `defaultModule`。模块ID为0是合法值（表示不归属具体模块），Excel中填写0会直接使用而不会降级到配置默认值。
 
-用户需求(requirement)必须指定有效的模块ID(>0)。获取模块ID的步骤：
+获取模块ID的步骤：
 
 1. 登录禅道 Web 界面
 2. 进入 **产品** → 选择产品 → **模块**

@@ -74,7 +74,7 @@ func TestReader_parseRow(t *testing.T) {
 			wantErr:         true,
 		},
 		{
-			name:            "模块ID为0表示未指定",
+			name:            "模块ID显式为0-合法值",
 			row:             []string{"story", "1", "0", "标题", "2", "feature", "描述"},
 			defaultPriority: 3,
 			wantErr:         false,

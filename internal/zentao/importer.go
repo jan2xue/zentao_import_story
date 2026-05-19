@@ -177,10 +177,6 @@ func (i *Importer) createRequirement(s *story.Story) (int, *req.Response, error)
 
 	// 设置模块ID（优先使用Excel中指定的模块ID，否则使用配置文件默认值）
 	req.Module = i.resolveModule(s.Module)
-	// 用户需求必须指定有效的模块ID（>0），Excel和配置文件都未提供时报错
-	if req.Module <= 0 {
-		return 0, nil, fmt.Errorf("创建用户需求需要有效的模块ID，请在Excel模块列或config.yaml中配置defaultModule参数")
-	}
 
 	// 设置评审人（如果配置了默认评审人）
 	if i.config.GetDefaultReviewer() != "" {
@@ -333,18 +329,21 @@ func (i *Importer) ImportStories(stories []story.Story) []ImportResult {
 }
 
 // resolveModule 解析模块ID，优先使用Excel中指定的模块ID，否则降级使用配置文件默认值
-// Excel模块ID > 0 表示明确指定了有效模块，直接使用
-// Excel模块ID = 0 表示未指定，使用配置文件默认值
-// 配置文件默认值 <= 0 表示未配置有效模块，返回0
-// 注意：用户需求(Requirement)要求模块ID > 0，由调用方额外校验
+// excelModule >= 0 表示Excel显式指定了模块ID（0也是合法值，表示不归属具体模块），直接使用
+// excelModule == -1 表示Excel未填写，使用配置文件默认值
+// 配置文件默认值 >= 0 时使用配置值，否则返回0
 func (i *Importer) resolveModule(excelModule int) int {
-	if excelModule > 0 {
+	if excelModule >= 0 {
+		i.logger.Debug("使用Excel指定的模块ID: %d", excelModule)
 		return excelModule
 	}
+	// excelModule == -1，Excel未填写，使用配置文件默认值
 	defaultModule := i.config.GetDefaultModule()
-	if defaultModule > 0 {
+	if defaultModule >= 0 {
+		i.logger.Debug("Excel未指定模块ID，使用配置文件默认模块ID: %d", defaultModule)
 		return defaultModule
 	}
+	i.logger.Debug("Excel和配置文件均未指定模块ID，模块ID将为0")
 	return 0
 }
 

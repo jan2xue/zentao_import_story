@@ -82,30 +82,50 @@ func TestImporter_ImportStory_APIFailure(t *testing.T) {
 	}
 }
 
-func TestImporter_ImportStory_RequirementModuleMissing(t *testing.T) {
+func TestImporter_ImportStory_RequirementModuleFallback(t *testing.T) {
 	var buf bytes.Buffer
 	log := logger.NewLoggerWithWriter(&buf)
 
-	cfg := &mockConfig{module: -1, reviewer: ""} // 模块ID=-1，应失败
-	importer := NewImporterWithMocks(log, nil, nil, nil, cfg)
+	// 测试1: Excel未填写模块ID(-1)，配置文件有默认值5，应使用配置值
+	t.Run("ExcelEmpty_UseConfigDefault", func(t *testing.T) {
+		cfg := &mockConfig{module: 5, reviewer: "tester"}
+		importer := NewImporterWithMocks(log, nil, nil, nil, cfg)
+		// Module=-1 表示Excel未填写
+		got := importer.resolveModule(-1)
+		if got != 5 {
+			t.Fatalf("期望模块ID=5，实际=%d", got)
+		}
+	})
 
-	s := &story.Story{
-		Type:      story.StoryTypeRequirement,
-		Title:     "用户需求",
-		ProductID: 1,
-		Priority:  3,
-		Category:  "feature",
-		Spec:      "desc",
-	}
+	// 测试2: Excel显式填写0，应直接使用0（0是合法值）
+	t.Run("ExcelExplicitZero_UseZero", func(t *testing.T) {
+		cfg := &mockConfig{module: 5, reviewer: "tester"}
+		importer := NewImporterWithMocks(log, nil, nil, nil, cfg)
+		got := importer.resolveModule(0)
+		if got != 0 {
+			t.Fatalf("期望模块ID=0，实际=%d", got)
+		}
+	})
 
-	result := importer.ImportStory(s)
+	// 测试3: Excel填写正数，应直接使用
+	t.Run("ExcelPositive_UseExcelValue", func(t *testing.T) {
+		cfg := &mockConfig{module: 5, reviewer: "tester"}
+		importer := NewImporterWithMocks(log, nil, nil, nil, cfg)
+		got := importer.resolveModule(10)
+		if got != 10 {
+			t.Fatalf("期望模块ID=10，实际=%d", got)
+		}
+	})
 
-	if result.Success {
-		t.Fatal("模块ID缺失时导入应失败")
-	}
-	if result.Error == nil {
-		t.Fatal("期望有错误信息")
-	}
+	// 测试4: Excel未填写且配置也为0，应使用0
+	t.Run("ExcelEmpty_ConfigZero_UseZero", func(t *testing.T) {
+		cfg := &mockConfig{module: 0, reviewer: "tester"}
+		importer := NewImporterWithMocks(log, nil, nil, nil, cfg)
+		got := importer.resolveModule(-1)
+		if got != 0 {
+			t.Fatalf("期望模块ID=0，实际=%d", got)
+		}
+	})
 }
 
 func TestImporter_ImportStories_EpicRequirementResolveID(t *testing.T) {

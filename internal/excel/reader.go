@@ -85,8 +85,8 @@ func (r *Reader) parseRow(row []string, defaultPriority int, rowIndex int) (stor
 		return story.Story{}, fmt.Errorf("产品ID必须是数字: %w", err)
 	}
 
-	// 解析模块ID (第3列) - 可选，0表示未指定，将使用配置文件默认值
-	moduleID := 0
+	// 解析模块ID (第3列) - 可选，空表示未指定将使用配置文件默认值，0为合法值表示不归属具体模块
+	moduleID := -1 // -1 表示Excel未填写
 	if len(row) > 2 && strings.TrimSpace(row[2]) != "" {
 		moduleID, err = strconv.Atoi(strings.TrimSpace(row[2]))
 		if err != nil {
@@ -95,6 +95,7 @@ func (r *Reader) parseRow(row []string, defaultPriority int, rowIndex int) (stor
 		if moduleID < 0 {
 			return story.Story{}, fmt.Errorf("模块ID不能为负数: %d", moduleID)
 		}
+		// moduleID >= 0 表示Excel显式指定了模块ID（0也是合法值）
 	}
 
 	// 解析标题 (第4列)
