@@ -3,6 +3,7 @@ package zentao
 import (
 	"bytes"
 	"fmt"
+	"reflect"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -126,6 +127,114 @@ func TestImporter_ImportStory_RequirementModuleFallback(t *testing.T) {
 			t.Fatalf("期望模块ID=0，实际=%d", got)
 		}
 	})
+}
+
+func TestImporter_resolveReviewer(t *testing.T) {
+	var buf bytes.Buffer
+	log := logger.NewLoggerWithWriter(&buf)
+
+	// 测试1: Excel填写了评审人，应优先使用Excel值（忽略配置默认值）
+	t.Run("ExcelSpecified_UseExcelValue", func(t *testing.T) {
+		cfg := &mockConfig{reviewer: "defaultUser"}
+		importer := NewImporterWithMocks(log, nil, nil, nil, cfg)
+		got := importer.resolveReviewer([]string{"zhangsan", "lisi"})
+		if len(got) != 2 || got[0] != "zhangsan" || got[1] != "lisi" {
+			t.Fatalf("期望使用Excel评审人[zhangsan lisi]，实际=%v", got)
+		}
+	})
+
+	// 测试2: Excel未填写评审人，应回退到配置默认值
+	t.Run("ExcelEmpty_UseConfigDefault", func(t *testing.T) {
+		cfg := &mockConfig{reviewer: "defaultUser"}
+		importer := NewImporterWithMocks(log, nil, nil, nil, cfg)
+		got := importer.resolveReviewer(nil)
+		if len(got) != 1 || got[0] != "defaultUser" {
+			t.Fatalf("期望使用配置默认评审人[defaultUser]，实际=%v", got)
+		}
+	})
+
+	// 测试3: Excel评审人为空切片，同样回退到配置默认值
+	t.Run("ExcelEmptySlice_UseConfigDefault", func(t *testing.T) {
+		cfg := &mockConfig{reviewer: "defaultUser"}
+		importer := NewImporterWithMocks(log, nil, nil, nil, cfg)
+		got := importer.resolveReviewer([]string{})
+		if len(got) != 1 || got[0] != "defaultUser" {
+			t.Fatalf("期望使用配置默认评审人[defaultUser]，实际=%v", got)
+		}
+	})
+
+	// 测试4: Excel和配置均未提供评审人，返回nil
+	t.Run("BothEmpty_ReturnNil", func(t *testing.T) {
+		cfg := &mockConfig{reviewer: ""}
+		importer := NewImporterWithMocks(log, nil, nil, nil, cfg)
+		got := importer.resolveReviewer(nil)
+		if got != nil {
+			t.Fatalf("期望返回nil，实际=%v", got)
+		}
+	})
+}
+
+// TestImporter_ImportStory_ReviewerPriority 覆盖三种需求类型的评审人来源：
+// Excel已填写 → 使用Excel；Excel为空 → 回退配置defaultReviewer
+func TestImporter_ImportStory_ReviewerPriority(t *testing.T) {
+	var buf bytes.Buffer
+	log := logger.NewLoggerWithWriter(&buf)
+
+	tests := []struct {
+		name           string
+		storyType      story.StoryType
+		excelReviewers []string
+		configReviewer string
+		want           []string
+	}{
+		{"Epic_Excel优先", story.StoryTypeEpic, []string{"excelUser"}, "defaultUser", []string{"excelUser"}},
+		{"Epic_回退配置默认值", story.StoryTypeEpic, nil, "defaultUser", []string{"defaultUser"}},
+		{"Requirement_Excel优先", story.StoryTypeRequirement, []string{"excelUser"}, "defaultUser", []string{"excelUser"}},
+		{"Requirement_回退配置默认值", story.StoryTypeRequirement, nil, "defaultUser", []string{"defaultUser"}},
+		{"Story_Excel多评审人优先", story.StoryTypeStory, []string{"excelUser", "lisi"}, "defaultUser", []string{"excelUser", "lisi"}},
+		{"Story_回退配置默认值", story.StoryTypeStory, nil, "defaultUser", []string{"defaultUser"}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var gotReviewer []string
+
+			epicSvc := &mockEpicService{
+				createFn: func(req EpicCreateRequest) (*EpicCreateResponse, *req.Response, error) {
+					gotReviewer = req.Reviewer
+					return &EpicCreateResponse{Status: "success", ID: 11}, nil, nil
+				},
+			}
+			reqSvc := &mockReqService{
+				createFn: func(req RequirementCreateRequest) (*RequirementCreateResponse, *req.Response, error) {
+					gotReviewer = req.Reviewer
+					return &RequirementCreateResponse{Status: "success", ID: 12}, nil, nil
+				},
+			}
+			storySvc := &mockStoryService{
+				createFn: func(req StoryCreateRequest) (*StoryCreateResponse, *req.Response, error) {
+					gotReviewer = req.Reviewer
+					return &StoryCreateResponse{Status: "success", ID: 13}, nil, nil
+				},
+			}
+
+			cfg := &mockConfig{reviewer: tt.configReviewer}
+			importer := NewImporterWithMocks(log, epicSvc, reqSvc, storySvc, cfg)
+
+			s := &story.Story{
+				Type: tt.storyType, Title: "需求", ProductID: 1, Priority: 3,
+				Category: "feature", Spec: "desc", Reviewers: tt.excelReviewers,
+			}
+
+			result := importer.ImportStory(s)
+			if !result.Success {
+				t.Fatalf("希望导入成功，实际错误: %v", result.Error)
+			}
+			if !reflect.DeepEqual(gotReviewer, tt.want) {
+				t.Errorf("评审人 = %v, 期望 %v", gotReviewer, tt.want)
+			}
+		})
+	}
 }
 
 func TestImporter_ImportStories_EpicRequirementResolveID(t *testing.T) {

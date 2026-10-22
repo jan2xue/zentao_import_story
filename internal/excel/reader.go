@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"unicode"
 
 	"github.com/xuri/excelize/v2"
 	"github.com/jan2xue/zentao_import_story/pkg/story"
@@ -30,7 +31,7 @@ func (r *Reader) Close() error {
 }
 
 // ReadStories 读取层级需求数据
-// Excel列定义: 需求类型 | 产品ID | 模块ID | 标题 | 优先级 | 分类 | 需求描述 | 父需求ID | 来源 | 来源备注 | 预计工时 | 关键词 | 验收标准
+// Excel列定义: 需求类型 | 产品ID | 模块ID | 标题 | 优先级 | 分类 | 需求描述 | 父需求ID | 来源 | 来源备注 | 预计工时 | 关键词 | 验收标准 | 评审人
 // 父需求ID支持格式: "@n"引用第n行数据的禅道ID，或纯数字作为实际禅道ID
 func (r *Reader) ReadStories(defaultPriority int) ([]story.Story, error) {
 	sheets := r.file.GetSheetList()
@@ -60,7 +61,7 @@ func (r *Reader) ReadStories(defaultPriority int) ([]story.Story, error) {
 }
 
 // parseRow 解析Excel行数据
-// Excel列定义: 需求类型 | 产品ID | 模块ID | 标题 | 优先级 | 分类 | 需求描述 | 父需求ID | 来源 | 来源备注 | 预计工时 | 关键词 | 验收标准
+// Excel列定义: 需求类型 | 产品ID | 模块ID | 标题 | 优先级 | 分类 | 需求描述 | 父需求ID | 来源 | 来源备注 | 预计工时 | 关键词 | 验收标准 | 评审人
 func (r *Reader) parseRow(row []string, defaultPriority int, rowIndex int) (story.Story, error) {
 	if len(row) < 7 {
 		return story.Story{}, fmt.Errorf("行数据不完整，缺少必填字段，当前列数: %d", len(row))
@@ -174,6 +175,47 @@ func (r *Reader) parseRow(row []string, defaultPriority int, rowIndex int) (stor
 	if len(row) > 12 {
 		s.Verify = strings.TrimSpace(row[12])
 	}
+	// 解析评审人 (第14列) - 可选，多个评审人用逗号/分号/顿号分隔
+	// 为空表示未填写，导入时将使用配置文件中的 defaultReviewer
+	if len(row) > 13 {
+		s.Reviewers = splitReviewers(row[13])
+	}
 
 	return s, nil
+}
+
+// splitReviewers 解析评审人列表
+// 支持使用英文/中文逗号、英文/中文分号、顿号及任意空白字符（含全角空格）分隔多个评审人
+// 自动去除空白项与重复项，保持原始顺序
+func splitReviewers(raw string) []string {
+	if strings.TrimSpace(raw) == "" {
+		return nil
+	}
+
+	// 分隔符仅限标点与空白字符：不使用 "/" "|" 等可能出现在账号名中的字符，避免误切分
+	// 空白判定使用 unicode.IsSpace，可覆盖中文输入法下的全角空格(U+3000)
+	parts := strings.FieldsFunc(raw, func(r rune) bool {
+		switch r {
+		case ',', '，', ';', '；', '、':
+			return true
+		}
+		return unicode.IsSpace(r)
+	})
+
+	reviewers := make([]string, 0, len(parts))
+	seen := make(map[string]bool, len(parts))
+	for _, p := range parts {
+		// TrimSpace 为防御性处理：若后续调整分隔符集合，仍能兜住带首尾空白的名字
+		name := strings.TrimSpace(p)
+		if name == "" || seen[name] {
+			continue
+		}
+		seen[name] = true
+		reviewers = append(reviewers, name)
+	}
+
+	if len(reviewers) == 0 {
+		return nil
+	}
+	return reviewers
 }

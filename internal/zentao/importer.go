@@ -136,10 +136,8 @@ func (i *Importer) createEpic(s *story.Story) (int, *req.Response, error) {
 		Estimate:   s.Estimate,
 	}
 
-	// 设置评审人（如果配置了默认评审人）
-	if i.config.GetDefaultReviewer() != "" {
-		req.Reviewer = []string{i.config.GetDefaultReviewer()}
-	}
+	// 设置评审人（优先使用Excel中指定的评审人，否则使用配置文件默认值）
+	req.Reviewer = i.resolveReviewer(s.Reviewers)
 
 	// 设置模块ID（优先使用Excel中指定的模块ID，否则使用配置文件默认值）
 	req.Module = i.resolveModule(s.Module)
@@ -178,10 +176,8 @@ func (i *Importer) createRequirement(s *story.Story) (int, *req.Response, error)
 	// 设置模块ID（优先使用Excel中指定的模块ID，否则使用配置文件默认值）
 	req.Module = i.resolveModule(s.Module)
 
-	// 设置评审人（如果配置了默认评审人）
-	if i.config.GetDefaultReviewer() != "" {
-		req.Reviewer = []string{i.config.GetDefaultReviewer()}
-	}
+	// 设置评审人（优先使用Excel中指定的评审人，否则使用配置文件默认值）
+	req.Reviewer = i.resolveReviewer(s.Reviewers)
 
 	i.logger.Debug("创建用户需求请求 - 产品ID: %d, 标题: %s, 模块ID: %d", s.ProductID, s.Title, req.Module)
 
@@ -217,10 +213,8 @@ func (i *Importer) createStory(s *story.Story) (int, *req.Response, error) {
 	// 设置模块ID（优先使用Excel中指定的模块ID，否则使用配置文件默认值）
 	req.Module = i.resolveModule(s.Module)
 
-	// 设置评审人（如果配置了默认评审人）
-	if i.config.GetDefaultReviewer() != "" {
-		req.Reviewer = []string{i.config.GetDefaultReviewer()}
-	}
+	// 设置评审人（优先使用Excel中指定的评审人，否则使用配置文件默认值）
+	req.Reviewer = i.resolveReviewer(s.Reviewers)
 
 	i.logger.Debug("创建研发需求请求 - 产品ID: %d, 标题: %s, 模块ID: %d", s.ProductID, s.Title, req.Module)
 
@@ -345,6 +339,25 @@ func (i *Importer) resolveModule(excelModule int) int {
 	}
 	i.logger.Debug("Excel和配置文件均未指定模块ID，模块ID将为0")
 	return 0
+}
+
+// resolveReviewer 解析评审人，优先使用Excel中指定的评审人，否则降级使用配置文件默认值
+// excelReviewers 非空表示Excel显式填写了评审人，直接使用
+// excelReviewers 为空表示Excel未填写，使用配置文件中的 defaultReviewer
+// 两者均未提供时返回 nil（不设置评审人字段）
+func (i *Importer) resolveReviewer(excelReviewers []string) []string {
+	if len(excelReviewers) > 0 {
+		i.logger.Debug("使用Excel指定的评审人: %v", excelReviewers)
+		return excelReviewers
+	}
+	// Excel未填写，使用配置文件默认值
+	defaultReviewer := i.config.GetDefaultReviewer()
+	if defaultReviewer != "" {
+		i.logger.Debug("Excel未指定评审人，使用配置文件默认评审人: %s", defaultReviewer)
+		return []string{defaultReviewer}
+	}
+	i.logger.Debug("Excel和配置文件均未指定评审人，评审人字段将不设置")
+	return nil
 }
 
 // resolveCreatedID 查询禅道获取需求创建后的实际ID

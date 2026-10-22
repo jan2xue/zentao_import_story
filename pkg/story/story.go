@@ -26,6 +26,7 @@ type Story struct {
 	Keywords   string    // 关键词
 	Verify     string    // 验收标准
 	Module     int       // 模块ID（-1表示Excel未填写需使用配置默认值，>=0为Excel显式指定，0也是合法值表示不归属具体模块）
+	Reviewers  []string  // 评审人（Excel第14列，为空表示未填写需使用配置默认值）
 	RowIndex   int       // 行号（Excel数据行号，1-based，用于层级引用）
 }
 

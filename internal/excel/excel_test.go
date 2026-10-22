@@ -1,6 +1,7 @@
 package excel
 
 import (
+	"reflect"
 	"testing"
 )
 
@@ -86,6 +87,103 @@ func TestReader_parseRow(t *testing.T) {
 			_, err := reader.parseRow(tt.row, tt.defaultPriority, 1)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("parseRow() error = %v, wantErr %v", err, tt.wantErr)
+			}
+		})
+	}
+}
+
+func TestReader_parseRow_Reviewers(t *testing.T) {
+	reader := &Reader{}
+
+	tests := []struct {
+		name string
+		row  []string
+		want []string
+	}{
+		{
+			name: "评审人为空-使用配置默认值",
+			row:  []string{"story", "1", "", "标题", "2", "feature", "描述", "", "", "", "", "", ""},
+			want: nil,
+		},
+		{
+			name: "评审人列缺失-使用配置默认值",
+			row:  []string{"story", "1", "", "标题", "2", "feature", "描述"},
+			want: nil,
+		},
+		{
+			name: "评审人为空白字符-使用配置默认值",
+			row:  []string{"story", "1", "", "标题", "2", "feature", "描述", "", "", "", "", "", "", "   "},
+			want: nil,
+		},
+		{
+			name: "单个评审人",
+			row:  []string{"story", "1", "", "标题", "2", "feature", "描述", "", "", "", "", "", "", "zhangsan"},
+			want: []string{"zhangsan"},
+		},
+		{
+			name: "多个评审人-英文逗号分隔",
+			row:  []string{"story", "1", "", "标题", "2", "feature", "描述", "", "", "", "", "", "", "zhangsan,lisi"},
+			want: []string{"zhangsan", "lisi"},
+		},
+		{
+			name: "多个评审人-混合分隔符与空格",
+			row:  []string{"story", "1", "", "标题", "2", "feature", "描述", "", "", "", "", "", "", " zhangsan、lisi; wangwu "},
+			want: []string{"zhangsan", "lisi", "wangwu"},
+		},
+		{
+			name: "评审人重复-自动去重",
+			row:  []string{"story", "1", "", "标题", "2", "feature", "描述", "", "", "", "", "", "", "zhangsan,zhangsan"},
+			want: []string{"zhangsan"},
+		},
+		{
+			name: "epic类型评审人",
+			row:  []string{"epic", "1", "", "标题", "1", "feature", "描述", "", "", "", "", "", "", "admin"},
+			want: []string{"admin"},
+		},
+		{
+			name: "requirement类型评审人",
+			row:  []string{"requirement", "1", "", "标题", "1", "feature", "描述", "", "", "", "", "", "", "admin,po"},
+			want: []string{"admin", "po"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			s, err := reader.parseRow(tt.row, 3, 1)
+			if err != nil {
+				t.Fatalf("parseRow() 返回错误: %v", err)
+			}
+			if !reflect.DeepEqual(s.Reviewers, tt.want) {
+				t.Errorf("Reviewers = %v, 期望 %v", s.Reviewers, tt.want)
+			}
+		})
+	}
+}
+
+func TestSplitReviewers(t *testing.T) {
+	tests := []struct {
+		name string
+		raw  string
+		want []string
+	}{
+		{name: "空字符串", raw: "", want: nil},
+		{name: "仅空格", raw: "   ", want: nil},
+		{name: "仅分隔符", raw: ",,；;", want: nil},
+		{name: "单值", raw: "admin", want: []string{"admin"}},
+		{name: "中文逗号", raw: "admin，tester", want: []string{"admin", "tester"}},
+		{name: "全角空格分隔", raw: "admin　tester", want: []string{"admin", "tester"}},
+		{name: "制表符与换行分隔", raw: "admin\ttester\nlisi", want: []string{"admin", "tester", "lisi"}},
+		{name: "全角空格首尾", raw: "　admin　", want: []string{"admin"}},
+		{name: "斜杠不作为分隔符", raw: "corp/user", want: []string{"corp/user"}},
+		{name: "竖线不作为分隔符", raw: "a|b", want: []string{"a|b"}},
+		{name: "末尾分隔符", raw: "admin,", want: []string{"admin"}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := splitReviewers(tt.raw)
+			if !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("splitReviewers(%q) = %v, 期望 %v", tt.raw, got, tt.want)
 			}
 		})
 	}

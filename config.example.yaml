@@ -8,5 +8,5 @@ excelFile: "requirements.xlsx"               # Excel文件路径（可选，可�
 
 # 默认值配置
 defaultPriority: 3                           # 默认优先级（1-4），如果Excel中未指定则使用此值
-defaultReviewer: "admin"                     # 默认评审人（用户名）
+defaultReviewer: "admin"                     # 默认评审人（用户名），Excel第14列"评审人"为空时使用
 defaultModule: 0                             # 默认模块ID（创建用户需求时需要有效的模块ID，请在禅道Web界面创建模块后填入ID）

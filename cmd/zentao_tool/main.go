@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"gopkg.in/yaml.v3"
@@ -157,11 +158,38 @@ func handleImport(cfg *config.Config, log *logger.Logger) {
 		fmt.Printf("%-10d %-40s %-10d\n", productID, productName, productCount[productID])
 	}
 
+	// 统计评审人来源：Excel按行指定 / 回退配置文件默认值
+	// Excel中评审人由使用者逐行填写，拼写错误会导致该行导入失败，故在导入前展示清单供核对
+	excelReviewers, fallbackRows := summarizeReviewers(stories)
+
+	fmt.Printf("\n评审人来源:\n")
+	if len(excelReviewers) > 0 {
+		fmt.Printf("  Excel指定评审人:    %s\n", strings.Join(excelReviewers, ", "))
+	} else {
+		fmt.Printf("  Excel指定评审人:    (无)\n")
+	}
+	switch {
+	case fallbackRows == 0:
+		fmt.Printf("  回退配置默认值:     0 行\n")
+	case cfg.DefaultReviewer != "":
+		fmt.Printf("  回退配置默认值:     %d 行 (defaultReviewer=%s)\n", fallbackRows, cfg.DefaultReviewer)
+	default:
+		fmt.Printf("  回退配置默认值:     %d 行 (未配置 defaultReviewer)\n", fallbackRows)
+	}
+
+	if fallbackRows > 0 && cfg.DefaultReviewer == "" {
+		fmt.Printf("\n⚠️  警告: 有 %d 行未指定评审人，且配置文件中未设置 defaultReviewer，\n", fallbackRows)
+		fmt.Printf("   这些需求将不带评审人，建议先在 config.yaml 中配置 defaultReviewer。\n")
+	}
+
 	fmt.Printf("\n%s\n", separator)
 	fmt.Printf("\n⚠️  重要提示：\n")
 	fmt.Printf("   1. 请仔细核对上述产品信息，错误的产品ID会导致数据导入错误产品\n")
 	fmt.Printf("   2. 父需求引用(@行号)将在导入时自动解析为实际禅道ID\n")
 	fmt.Printf("   3. 导入顺序为 Epic → Requirement → Story，确保父需求先创建\n")
+	if len(excelReviewers) > 0 {
+		fmt.Printf("   4. 请核对上方\"Excel指定评审人\"清单，用户名拼写错误会导致对应需求导入失败\n")
+	}
 	fmt.Printf("\n是否确认导入? (yes/no): ")
 
 	confirmReader := bufio.NewReader(os.Stdin)
@@ -312,6 +340,32 @@ func handleDelete(cfg *config.Config, log *logger.Logger, productID int, titleFi
 	if hasFailure {
 		os.Exit(1)
 	}
+}
+
+// summarizeReviewers 汇总本批次需求的评审人来源
+// 返回1：Excel中按行指定的评审人（去重后按名称升序排序）
+// 返回2：未在Excel指定评审人、需回退使用 defaultReviewer 的行数
+func summarizeReviewers(stories []story.Story) ([]string, int) {
+	reviewerSet := make(map[string]bool)
+	fallbackRows := 0
+
+	for _, s := range stories {
+		if len(s.Reviewers) == 0 {
+			fallbackRows++
+			continue
+		}
+		for _, r := range s.Reviewers {
+			reviewerSet[r] = true
+		}
+	}
+
+	reviewers := make([]string, 0, len(reviewerSet))
+	for r := range reviewerSet {
+		reviewers = append(reviewers, r)
+	}
+	sort.Strings(reviewers)
+
+	return reviewers, fallbackRows
 }
 
 // loadConfig 从YAML文件加载配置，支持环境变量覆盖敏感字段
